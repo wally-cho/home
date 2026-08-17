@@ -1,0 +1,99 @@
+name: Wallet Deploy
+
+# master에 push하면 배포된다. handari의 deploy.yml과 같은 구조다.
+# 다른 점은 두 개뿐: 이미지 이름(wallet)과 도메인, 그리고 SSH를 여닫는 보안그룹이
+# wallet 전용(wallet-sg)이라는 것. tium SG는 규칙 쿼터가 꽉 차서 쓰지 않는다.
+
+on:
+  push:
+    branches: ['master']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Generate version tag
+        id: meta
+        run: echo "VERSION_TAG=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/wallet:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/wallet:${{ steps.meta.outputs.VERSION_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      # EC2 보안그룹은 SSH를 열어두지 않는다. 배포하는 동안만 러너 IP를 연다.
+      # wallet-sg에 여는데, 이 SG도 같은 인스턴스에 붙어 있어 SSH가 통한다.
+      # handari 배포와 규칙이 겹치지 않아 동시에 배포해도 서로를 닫지 않는다.
+      - name: Open SSH for runner IP
+        id: ip
+        run: |
+          RUNNER_IP=$(curl -s https://ifconfig.me)
+          echo "RUNNER_IP=$RUNNER_IP" >> $GITHUB_OUTPUT
+          aws ec2 authorize-security-group-ingress \
+            --group-id ${{ secrets.EC2_SG_ID }} \
+            --protocol tcp --port 22 --cidr $RUNNER_IP/32 \
+            2>/dev/null || true
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.EC2_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy on EC2
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "${{ secrets.EC2_USER }}"@"${{ secrets.EC2_HOST }}" \
+            "/home/ubuntu/infra/deploy-wallet.sh \
+            ${{ secrets.DOCKERHUB_USERNAME }}/wallet:${{ steps.meta.outputs.VERSION_TAG }}"
+
+      - name: Health check
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://wallet.tium-care.com/api/health)
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "헬스체크 실패: HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Revoke runner IP
+        if: always()
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id ${{ secrets.EC2_SG_ID }} \
+            --protocol tcp --port 22 --cidr ${{ steps.ip.outputs.RUNNER_IP }}/32 \
+            2>/dev/null || true
+
+# 배포 알림을 Slack으로 보내지 않는다.
+# 쓸 수 있는 웹훅이 tium 서버 알림 채널뿐이라, 배포 로그가 섞이면 안 된다.
+# 실패는 GitHub이 기본으로 리포 소유자에게 메일을 보낸다.

@@ -1,0 +1,26 @@
+node_modules
+.next
+.git
+.github
+.claude
+.agents
+.omc
+.idea
+.vscode
+
+# 비밀정보는 절대 이미지에 들어가지 않는다.
+# 운영 환경변수는 EC2의 deploy 스크립트가 SSM에서 받아 env_file로 주입한다.
+.env
+.env.*
+
+*.md
+!README.md
+
+migrations
+scripts
+data
+mockup
+Dockerfile
+.dockerignore
+docker-compose*.yml
+infra

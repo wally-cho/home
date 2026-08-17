@@ -1,0 +1,37 @@
+{
+  "name": "wallet",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "tunnel": "ssh -L 13306:tium-mysql.cjw20gkywty8.ap-northeast-2.rds.amazonaws.com:3306 -N tium",
+    "migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "migrate:status": "node --env-file=.env.local scripts/migrate.mjs --status",
+    "loans:import": "node --env-file=.env.local scripts/import-loans.mjs",
+    "format": "prettier --write \"{app,components,lib,scripts}/**/*.{ts,tsx,css,mjs}\"",
+    "living:import": "node --env-file=.env.local scripts/import-living.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.23.2",
+    "next": "16.3.0",
+    "next-auth": "^5.0.0-beta.32",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

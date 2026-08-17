@@ -1,0 +1,33 @@
+name: CI
+
+# PR과 master push에서 타입·린트·빌드만 본다. 테스트는 아직 없다.
+# DB에 붙지 않으므로 터널이나 시크릿이 필요 없다.
+
+on:
+  pull_request:
+  push:
+    branches: ['master']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
