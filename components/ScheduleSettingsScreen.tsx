@@ -26,6 +26,7 @@ export function ScheduleSettingsScreen(props: ScheduleSettingsData) {
  */
 function ScheduleSettings({ sources }: ScheduleSettingsData) {
   const toast = useToast();
+  const [naverOpen, setNaverOpen] = useState(false);
   const connected = sources.filter((s) => s.connected === 1);
 
   return (
@@ -33,6 +34,9 @@ function ScheduleSettings({ sources }: ScheduleSettingsData) {
       <main>
         <SettingsBar title="일정 설정" />
 
+        {/* 연결은 한 상자에 모은다. 구글이든 네이버든 '어디서 끌어오는가'로는 같은
+            것이라, 상자를 나누면 사람이 어느 상자에 있는지가 곧 제공자가 되어 헷갈린다.
+            무엇으로 붙었는지는 각 줄이 말한다 */}
         <section>
           <h2 className="h">
             <span>캘린더 연결</span>
@@ -50,14 +54,22 @@ function ScheduleSettings({ sources }: ScheduleSettingsData) {
                 ))}
               </ul>
             )}
-            {/* 서버 액션이 아니라 링크다. 구글 동의 화면으로 나갔다 돌아온다 */}
-            <a className="addgrp" href="/api/calendar/google/start">
-              ＋ 구글 캘린더 연결
-            </a>
+
+            {naverOpen ? (
+              <NaverForm toast={toast} onDone={() => setNaverOpen(false)} />
+            ) : (
+              <div className="addrow">
+                {/* 구글은 서버 액션이 아니라 링크다. 동의 화면으로 나갔다 돌아온다 */}
+                <a className="addgrp" href="/api/calendar/google/start">
+                  ＋ 구글
+                </a>
+                <button className="addgrp" onClick={() => setNaverOpen(true)}>
+                  ＋ 네이버
+                </button>
+              </div>
+            )}
           </div>
         </section>
-
-        <NaverBox toast={toast} />
       </main>
 
       <Nav onQuick={() => {}} />
@@ -91,7 +103,10 @@ function Source({ s, toast }: { s: SourceRow; toast: (m: string) => void }) {
           toast(`${next}으로 바꿨습니다`);
         }}
       />
-      <span className="lo">{s.account ?? ''}</span>
+      {/* 무엇으로 붙었는지는 줄이 말한다. 상자를 나누지 않는 이유다 */}
+      <span className="lo">
+        {s.provider === 'google' ? '구글' : '네이버'} · {s.account ?? ''}
+      </span>
       <button
         className="txtbtn"
         onClick={async () => {
@@ -107,14 +122,13 @@ function Source({ s, toast }: { s: SourceRow; toast: (m: string) => void }) {
 
 
 /**
- * 네이버는 OAuth가 없다. CalDAV라 아이디와 앱 비밀번호를 직접 받는다.
+ * 네이버는 OAuth가 없다. CalDAV라 아이디와 비밀번호를 직접 받는다.
  *
- * **계정 비밀번호를 받지 않는다.** 그것은 네이버 전체를 여는 열쇠다.
- * 앱 비밀번호는 캘린더에만 쓰이고 네이버에서 그것만 따로 폐기할 수 있다.
- * 화면에 그렇게 적어둔다 - 안 적으면 계정 비밀번호를 넣게 된다.
+ * **앱 비밀번호를 권한다.** 2단계 인증 안에서 만드는 값이고 캘린더에만 쓰이며 따로
+ * 폐기할 수 있다. 계정 비밀번호를 넣으면 우리 DB에 든 값이 메일까지 여는 열쇠가 된다 -
+ * 네이버의 앱 비밀번호는 IMAP·POP·SMTP에도 쓰이는 자리다.
  */
-function NaverBox({ toast }: { toast: (m: string) => void }) {
-  const [open, setOpen] = useState(false);
+function NaverForm({ toast, onDone }: { toast: (m: string) => void; onDone: () => void }) {
   const [id, setId] = useState('');
   const [pw, setPw] = useState('');
   const [owner, setOwner] = useState('');
@@ -130,7 +144,7 @@ function NaverBox({ toast }: { toast: (m: string) => void }) {
       setId('');
       setPw('');
       setOwner('');
-      setOpen(false);
+      onDone();
       toast('네이버 캘린더를 연결했습니다');
     } catch (e) {
       setErr(e instanceof Error ? e.message : '연결하지 못했습니다');
@@ -139,53 +153,40 @@ function NaverBox({ toast }: { toast: (m: string) => void }) {
   };
 
   return (
-    <section>
-      <h2 className="h">
-        <span>네이버 캘린더</span>
-        <span>CalDAV로 붙습니다</span>
-      </h2>
-      <div className="card">
-        {!open ? (
-          <button className="addgrp" onClick={() => setOpen(true)}>
-            ＋ 네이버 캘린더 연결
-          </button>
-        ) : (
-          <div className="form">
-            <p className="lbl" style={{ margin: '0 0 4px' }}>
-              2단계 인증을 쓰면 그 안에서 만든 <b>애플리케이션 비밀번호</b>를 넣습니다.
-              캘린더에만 쓰이고 따로 폐기할 수 있어 그쪽이 안전합니다.
-            </p>
-            <input
-              placeholder="네이버 아이디"
-              value={id}
-              autoComplete="off"
-              onChange={(e) => setId(e.target.value)}
-            />
-            <input
-              placeholder="네이버 비밀번호 또는 앱 비밀번호"
-              type="password"
-              value={pw}
-              autoComplete="off"
-              onChange={(e) => setPw(e.target.value)}
-            />
-            <input
-              placeholder="화면에 뜰 이름 (예: 혜윤)"
-              value={owner}
-              maxLength={12}
-              onChange={(e) => setOwner(e.target.value)}
-            />
-            {err && <p className="errline">{err}</p>}
-            <div className="formrow">
-              <button className="txtbtn" onClick={() => setOpen(false)}>
-                취소
-              </button>
-              <button className="gobtn" onClick={submit} disabled={busy || !id || !pw}>
-                {busy ? '붙어보는 중' : '연결'}
-              </button>
-            </div>
-          </div>
-        )}
+    <div className="form">
+      <p className="lbl" style={{ margin: 0 }}>
+        네이버 → 내 정보 → 보안설정 → 2단계 인증 [관리]에서 만든{' '}
+        <b>애플리케이션 비밀번호</b>를 넣습니다.
+      </p>
+      <input
+        placeholder="네이버 아이디 (@naver.com 빼고)"
+        value={id}
+        autoComplete="off"
+        onChange={(e) => setId(e.target.value)}
+      />
+      <input
+        placeholder="애플리케이션 비밀번호"
+        type="password"
+        value={pw}
+        autoComplete="off"
+        onChange={(e) => setPw(e.target.value)}
+      />
+      <input
+        placeholder="화면에 뜰 이름"
+        value={owner}
+        maxLength={12}
+        onChange={(e) => setOwner(e.target.value)}
+      />
+      {/* 실패는 그대로 보여준다. 무엇이 틀렸는지 말해주지 않으면 다시 넣을 수 없다 */}
+      {err && <p className="errline">{err}</p>}
+      <div className="formrow">
+        <button className="txtbtn" onClick={onDone}>
+          취소
+        </button>
+        <button className="gobtn" onClick={submit} disabled={busy || !id || !pw}>
+          {busy ? '붙어보는 중' : '연결'}
+        </button>
       </div>
-    </section>
+    </div>
   );
 }

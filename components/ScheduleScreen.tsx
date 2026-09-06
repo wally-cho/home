@@ -118,7 +118,10 @@ function Schedule({
             </div>
 
             {/* 범례가 곧 필터다. 색이 무엇을 뜻하는지 보여주면서 누르면 그 사람만 남는다.
-                둘 이상일 때만 나온다 - 하나뿐이면 눌러도 아무 일이 없는 버튼이 된다 */}
+                둘 이상일 때만 나온다 - 하나뿐이면 눌러도 아무 일이 없는 버튼이 된다.
+
+                '오늘' 표시를 이 줄에 섞지 않는다. 셋은 누르는 것이고 그건 설명인데
+                모양이 같으면 네 번째 칩으로 읽힌다. 오늘 칸은 격자에서 이미 도드라진다 */}
             {connected.length > 1 ? (
               <div className="callegend pick">
                 <button aria-pressed={only === null} onClick={() => setOnly(null)}>
@@ -133,11 +136,6 @@ function Schedule({
                     <i className="evmark" style={{ background: s.color }} /> {s.owner}
                   </button>
                 ))}
-                {isThisMonth && (
-                  <span>
-                    <i className="todaymark" /> 오늘
-                  </span>
-                )}
               </div>
             ) : (
               <div className="callegend">

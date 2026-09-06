@@ -257,11 +257,18 @@ export async function findCalendars(auth: CalDavAuth): Promise<string[]> {
 /**
  * 기간 안의 일정.
  *
- * `<C:expand>`로 **서버에게** 반복을 펼쳐 달라고 한다. 구글의 `singleEvents=true`와
- * 같은 요청이다. 서버가 지원하지 않으면 원본이 그대로 오고 그 안에 `RRULE`이 남는데,
- * 그때는 `recurring: true`로 표시만 하고 우리가 풀지 않는다 -
- * 예외 규칙(그 주만 옮김, 그 회만 취소)에서 원본과 어긋나고 그 차이를 설명할 방법이 없다.
+ * **두 단계로 받는다.** 네이버의 `calendar-query`는 주소(href) 목록만 주고
+ * `<D:prop />`을 비워서 보낸다 - `<c:calendar-data>`를 요청해도 담아 주지 않는다.
+ * 그래서 목록을 먼저 받고, 그 주소들로 `calendar-multiget`을 한 번 더 보낸다.
+ * 한 건씩 GET하지 않는 것은 일정이 수십 개면 요청도 수십 개가 되기 때문이다.
+ *
+ * `<C:expand>`(서버가 반복을 펼쳐 주는 것)는 네이버가 지원하지 않는다. 그래서
+ * 반복 일정은 원본 그대로 오고 `RRULE`이 남는다. 우리가 풀지 않고 `recurring`으로
+ * 표시만 한다 - 예외 규칙(그 주만 옮김, 그 회만 취소)에서 원본과 어긋나고
+ * 그 차이를 설명할 방법이 없다. 상환표를 계산하지 않는 것과 같은 이유다.
  */
+const MULTIGET_CHUNK = 50;
+
 export async function fetchEvents(
   auth: CalDavAuth,
   from: string,
@@ -270,9 +277,7 @@ export async function fetchEvents(
   const start = stamp(from);
   const end = stamp(to, true);
   const query = `<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <d:prop>
-    <c:calendar-data><c:expand start="${start}" end="${end}"/></c:calendar-data>
-  </d:prop>
+  <d:prop><d:getetag/></d:prop>
   <c:filter>
     <c:comp-filter name="VCALENDAR">
       <c:comp-filter name="VEVENT">
@@ -284,9 +289,23 @@ export async function fetchEvents(
 
   const found: CalDavEvent[] = [];
   for (const cal of await findCalendars(auth)) {
-    const xml = await dav(cal, 'REPORT', auth, '1', query);
-    for (const data of tags(xml, 'calendar-data')) {
-      found.push(...parseEvents(decodeXml(data)));
+    // 1단계 - 그 기간에 걸치는 일정의 주소만 받는다
+    const listXml = await dav(cal, 'REPORT', auth, '1', query);
+    const hrefs = tags(listXml, 'response')
+      .map((r) => firstHref(r))
+      .filter((h): h is string => !!h);
+
+    // 2단계 - 그 주소들의 내용을 한 번에 받는다
+    for (let i = 0; i < hrefs.length; i += MULTIGET_CHUNK) {
+      const chunk = hrefs.slice(i, i + MULTIGET_CHUNK);
+      const multiget = `<c:calendar-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop><c:calendar-data/></d:prop>
+  ${chunk.map((h) => `<d:href>${h.replace(/&/g, '&amp;')}</d:href>`).join('\n  ')}
+</c:calendar-multiget>`;
+      const dataXml = await dav(cal, 'REPORT', auth, '1', multiget);
+      for (const data of tags(dataXml, 'calendar-data')) {
+        found.push(...parseEvents(decodeXml(data)));
+      }
     }
   }
 
@@ -301,7 +320,9 @@ export async function fetchEvents(
 }
 
 function decodeXml(v: string): string {
-  return v
+  // 네이버는 iCalendar 본문을 CDATA로 감싸 보낸다. 벗기지 않으면 첫 줄이 안 맞는다
+  const inner = v.replace(/^\s*<!\[CDATA\[/, '').replace(/\]\]>\s*$/, '');
+  return inner
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
