@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/auth';
-import { getSources, syncAll } from '@/lib/calendar';
+import { getSources, syncAll, yearWindow } from '@/lib/calendar';
 import { cookies } from 'next/headers';
-import { MONTH_COOKIE, pickYm, shiftYm } from '@/lib/month';
+import { MONTH_COOKIE, pickYm } from '@/lib/month';
 
 /**
  * 새로고침 버튼이 부르는 자리. 24시간을 안 기다리고 지금 가져온다.
@@ -17,7 +17,7 @@ export async function POST() {
 
   const ym = pickYm(undefined, (await cookies()).get(MONTH_COOKIE)?.value);
   const sources = await getSources();
-  await syncAll(sources, shiftYm(ym, -1), shiftYm(ym, 1));
+  await syncAll(sources, yearWindow(ym).year);
 
   return NextResponse.json({ ok: true });
 }

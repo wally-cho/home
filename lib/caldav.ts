@@ -27,8 +27,10 @@ export interface CalDavEvent {
   location: string | null;
   /** 원본 반복 규칙. 네이버는 펼쳐 주지 않으므로 그대로 온다 */
   rrule: string | null;
-  /** 예외 날짜나 개별 수정이 붙어 있는가. 있으면 우리가 펴지 않는다 */
-  hasException: boolean;
+  /** 그 회차만 빼기로 한 날들 */
+  exdates: string[];
+  /** 이 줄이 어떤 회차의 수정본인가. 그 날의 원래 회차를 대신한다 */
+  recurrenceId: string | null;
 }
 
 function authHeader(a: CalDavAuth): string {
@@ -139,7 +141,7 @@ export function parseEvents(ics: string): CalDavEvent[] {
 
   for (const line of unfold(ics)) {
     if (line.startsWith('BEGIN:VEVENT')) {
-      cur = { rrule: null, hasException: false };
+      cur = { rrule: null, exdates: [], recurrenceId: null };
       continue;
     }
     if (line.startsWith('END:VEVENT')) {
@@ -153,7 +155,8 @@ export function parseEvents(ics: string): CalDavEvent[] {
           ends_at: cur.ends_at ?? null,
           location: cur.location ? cur.location.slice(0, 120) : null,
           rrule: cur.rrule ?? null,
-          hasException: cur.hasException ?? false,
+          exdates: cur.exdates ?? [],
+          recurrenceId: cur.recurrenceId ?? null,
         });
       }
       cur = null;
@@ -183,10 +186,15 @@ export function parseEvents(ics: string): CalDavEvent[] {
         cur.rrule = f.value.trim().toUpperCase();
         break;
       case 'EXDATE':
+        // 쉼표로 여러 개가 온다. 그 회차는 빼기로 한 날들이다
+        cur.exdates = [
+          ...(cur.exdates ?? []),
+          ...f.value.split(',').map((v) => moment(v, f.params).date),
+        ];
+        break;
       case 'RECURRENCE-ID':
-        // 예외가 붙은 반복은 우리가 펴지 않는다. 규칙만 보고 계산하면
-        // 옮기거나 취소한 회차에서 원본과 어긋나고 그 차이를 설명할 방법이 없다
-        cur.hasException = true;
+        // 이 줄은 어떤 회차의 수정본이다. 그 날의 원래 회차를 대신한다
+        cur.recurrenceId = moment(f.value, f.params).date;
         break;
       case 'DTSTART': {
         const m = moment(f.value, f.params);
@@ -209,37 +217,159 @@ export function parseEvents(ics: string): CalDavEvent[] {
 /* ── 반복 일정 ───────────────────────────────────────────── */
 
 /**
- * `매년 m월 d일`만 편다.
+ * 네이버는 `<C:expand>`를 지원하지 않아 반복 일정의 원본이 그대로 온다.
+ * 그대로 두면 매년 오는 생일이 시작일(2016년 같은 날)에만 찍힌다. 그래서 편다.
  *
- * 네이버는 `<C:expand>`를 지원하지 않아 반복 일정의 원본이 그대로 온다. 그대로 두면
- * 매년 오는 생일이 시작일(1964년 같은 날)에만 찍힌다.
+ * **원본과 어긋나지 않는 이유는 네이버가 필요한 걸 다 주기 때문이다.**
+ *   - `RRULE`   규칙
+ *   - `EXDATE`  그 회차만 뺀 날
+ *   - `RECURRENCE-ID` 그 회차만 고친 별도 줄 (옮긴 날짜·바뀐 제목이 들어 있다)
  *
- * **확실한 것만 편다.** 생일·기념일이 쓰는 이 한 가지 형태는 예외가 붙지 않는 한
- * 계산해도 원본과 어긋날 여지가 없다 - 매년 그 날이다. 요일 규칙·간격·횟수 제한이
- * 붙거나 예외가 하나라도 있으면 손대지 않고 몇 건인지 세어서 화면에 적는다.
- * 상환표를 계산하지 않는 것과 같은 이유다.
+ * 셋을 다 쓰면 "그 주만 옮김", "그 회는 취소"가 그대로 반영된다. 규칙만 보고
+ * 계산했다면 어긋났을 자리다. 그래도 우리가 모르는 규칙이 오면 손대지 않고
+ * 몇 건인지 세어 화면에 적는다 - 조용히 틀린 날에 찍는 것이 제일 나쁘다.
  */
-function yearlyOn(rrule: string): { month: number; day: number } | null {
-  const p = new Map(
-    rrule.split(';').map((kv) => {
-      const [k, v] = kv.split('=');
-      return [k, v ?? ''];
-    }),
-  );
-  if (p.get('FREQ') !== 'YEARLY') return null;
-  if (p.has('INTERVAL') && p.get('INTERVAL') !== '1') return null;
-  // 다른 조건이 붙으면 우리가 아는 형태가 아니다
-  for (const k of p.keys()) {
-    if (!['FREQ', 'INTERVAL', 'BYMONTH', 'BYMONTHDAY', 'WKST'].includes(k)) return null;
+
+const DOW = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+interface Rule {
+  freq: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+  interval: number;
+  count: number | null;
+  until: string | null;
+  byDay: string[];
+  byMonthDay: number[];
+  byMonth: number[];
+}
+
+function parseRule(rrule: string): Rule | null {
+  const p = new Map<string, string>();
+  for (const kv of rrule.split(';')) {
+    const [k, v] = kv.split('=');
+    if (k) p.set(k, v ?? '');
   }
-  const month = Number(p.get('BYMONTH'));
-  const day = Number(p.get('BYMONTHDAY'));
-  if (!month || !day) return null;
-  return { month, day };
+  const freq = p.get('FREQ');
+  if (freq !== 'DAILY' && freq !== 'WEEKLY' && freq !== 'MONTHLY' && freq !== 'YEARLY') {
+    return null;
+  }
+  // 우리가 모르는 조건이 붙으면 손대지 않는다. BYSETPOS·BYWEEKNO·BYYEARDAY 같은 것들이다
+  const known = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST'];
+  for (const k of p.keys()) if (!known.includes(k)) return null;
+
+  const until = p.get('UNTIL');
+  return {
+    freq,
+    interval: Math.max(1, Number(p.get('INTERVAL') ?? 1)),
+    count: p.has('COUNT') ? Number(p.get('COUNT')) : null,
+    until: until ? `${until.slice(0, 4)}-${until.slice(4, 6)}-${until.slice(6, 8)}` : null,
+    byDay: (p.get('BYDAY') ?? '').split(',').filter(Boolean),
+    byMonthDay: (p.get('BYMONTHDAY') ?? '').split(',').filter(Boolean).map(Number),
+    byMonth: (p.get('BYMONTH') ?? '').split(',').filter(Boolean).map(Number),
+  };
+}
+
+const ymd = (d: Date) => d.toISOString().slice(0, 10);
+const utc = (s: string) => new Date(`${s}T00:00:00Z`);
+const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 86400000);
+
+/** `2TU`(둘째 화요일) · `-1FR`(마지막 금요일) · `MO`(모든 월요일) */
+function matchesByDay(token: string, d: Date): boolean {
+  const m = /^(-?\d+)?([A-Z]{2})$/.exec(token);
+  if (!m) return false;
+  if (DOW[d.getUTCDay()] !== m[2]) return false;
+  if (!m[1]) return true;
+
+  const n = Number(m[1]);
+  if (n > 0) return Math.floor((d.getUTCDate() - 1) / 7) + 1 === n;
+
+  // 뒤에서 센다. 그 달 말일까지 남은 같은 요일의 수
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  return Math.floor((last - d.getUTCDate()) / 7) + 1 === -n;
+}
+
+/** 그 날이 규칙에 맞는가 */
+function matches(rule: Rule, start: Date, d: Date): boolean {
+  if (rule.byMonth.length && !rule.byMonth.includes(d.getUTCMonth() + 1)) return false;
+
+  if (rule.byMonthDay.length) {
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    const ok = rule.byMonthDay.some((n) => (n > 0 ? n === d.getUTCDate() : last + n + 1 === d.getUTCDate()));
+    if (!ok) return false;
+  }
+
+  if (rule.byDay.length) {
+    if (!rule.byDay.some((t) => matchesByDay(t, d))) return false;
+  }
+
+  switch (rule.freq) {
+    case 'DAILY':
+      return daysBetween(start, d) % rule.interval === 0;
+    case 'WEEKLY': {
+      // 주 간격은 시작일이 속한 주부터 센다
+      const weeks = Math.floor(daysBetween(start, d) / 7);
+      if (weeks % rule.interval !== 0) return false;
+      return rule.byDay.length > 0 || d.getUTCDay() === start.getUTCDay();
+    }
+    case 'MONTHLY': {
+      const months =
+        (d.getUTCFullYear() - start.getUTCFullYear()) * 12 + (d.getUTCMonth() - start.getUTCMonth());
+      if (months % rule.interval !== 0) return false;
+      return (
+        rule.byMonthDay.length > 0 ||
+        rule.byDay.length > 0 ||
+        d.getUTCDate() === start.getUTCDate()
+      );
+    }
+    case 'YEARLY': {
+      const years = d.getUTCFullYear() - start.getUTCFullYear();
+      if (years % rule.interval !== 0) return false;
+      if (!rule.byMonth.length && d.getUTCMonth() !== start.getUTCMonth()) return false;
+      return (
+        rule.byMonthDay.length > 0 ||
+        rule.byDay.length > 0 ||
+        d.getUTCDate() === start.getUTCDate()
+      );
+    }
+  }
+}
+
+/** COUNT가 붙은 규칙만 시작일부터 세어야 한다. 그 외에는 창 안만 훑으면 된다 */
+const COUNT_SCAN_CAP = 20000;
+
+function instancesIn(rule: Rule, startYmd: string, from: string, to: string): string[] | null {
+  const start = utc(startYmd);
+  const out: string[] = [];
+
+  if (rule.count !== null) {
+    // 몇 번째까지인지 알려면 시작부터 센다. 너무 멀면 포기하고 손대지 않는다
+    let seen = 0;
+    const cur = new Date(start);
+    for (let i = 0; i < COUNT_SCAN_CAP && seen < rule.count; i++) {
+      const day = ymd(cur);
+      if (matches(rule, start, cur)) {
+        seen++;
+        if (day >= from && day <= to) out.push(day);
+      }
+      if (day > to) break;
+      cur.setUTCDate(cur.getUTCDate() + 1);
+      if (i === COUNT_SCAN_CAP - 1) return null;
+    }
+    return out;
+  }
+
+  const begin = startYmd > from ? startYmd : from;
+  const cur = utc(begin);
+  const stop = utc(to);
+  while (cur <= stop) {
+    const day = ymd(cur);
+    if ((!rule.until || day <= rule.until) && matches(rule, start, cur)) out.push(day);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out;
 }
 
 /**
- * 기간에 걸치는 것만 남기고, 펼 수 있는 반복은 편다.
+ * 기간에 걸치는 것만 남기고, 반복은 편다.
  *
  * 기간 밖을 우리가 버려야 한다 - 네이버는 한 파일에 여러 일정을 담아 보내서
  * 주소 목록이 걸러져도 내용에는 기간 밖 일정이 딸려 온다.
@@ -251,32 +381,46 @@ export function expandInWindow(
 ): { events: CalDavEvent[]; unexpanded: number } {
   const out: CalDavEvent[] = [];
   let unexpanded = 0;
-  const fromYear = Number(from.slice(0, 4));
-  const toYear = Number(to.slice(0, 4));
+
+  // 그 회차만 고친 줄들. 원래 날짜로 찾아 쓴다
+  const overrides = new Map<string, CalDavEvent>();
+  for (const e of events) {
+    if (e.recurrenceId) overrides.set(`${e.uid}|${e.recurrenceId}`, e);
+  }
+
+  const keep = (e: CalDavEvent) => e.starts_on <= to && e.ends_on >= from;
 
   for (const e of events) {
+    // 수정본은 아래에서 원래 회차 자리에 넣는다. 여기서 또 넣으면 두 번 나온다
+    if (e.recurrenceId) continue;
+
     if (!e.rrule) {
-      if (e.starts_on <= to && e.ends_on >= from) out.push(e);
+      if (keep(e)) out.push(e);
       continue;
     }
 
-    const on = e.hasException ? null : yearlyOn(e.rrule);
-    if (!on) {
-      // 못 펴는 반복. 첫 회가 기간 안이면 그것만 보이고, 아니면 아예 안 보인다
+    const rule = parseRule(e.rrule);
+    const days = rule ? instancesIn(rule, e.starts_on, from, to) : null;
+    if (!days) {
+      // 모르는 규칙이다. 조용히 틀린 날에 찍지 않고 원본만 두고 센다
       unexpanded += 1;
-      if (e.starts_on <= to && e.ends_on >= from) out.push(e);
+      if (keep(e)) out.push(e);
       continue;
     }
 
-    const span = Number(e.ends_on.slice(8, 10)) - Number(e.starts_on.slice(8, 10));
-    for (let y = fromYear; y <= toYear; y++) {
-      // 시작 연도 이전은 아직 없던 일이다
-      if (y < Number(e.starts_on.slice(0, 4))) continue;
-      const d = `${y}-${String(on.month).padStart(2, '0')}-${String(on.day).padStart(2, '0')}`;
-      if (d < from || d > to) continue;
-      const end = new Date(`${d}T00:00:00Z`);
+    const span = daysBetween(utc(e.starts_on), utc(e.ends_on));
+    const skip = new Set(e.exdates);
+    for (const day of days) {
+      if (skip.has(day)) continue;
+      const fixed = overrides.get(`${e.uid}|${day}`);
+      if (fixed) {
+        // 그 회차만 고친 것이 있으면 그것을 쓴다. 옮긴 날짜와 바뀐 제목이 들어 있다
+        if (keep(fixed)) out.push(fixed);
+        continue;
+      }
+      const end = utc(day);
       end.setUTCDate(end.getUTCDate() + Math.max(0, span));
-      out.push({ ...e, starts_on: d, ends_on: end.toISOString().slice(0, 10) });
+      out.push({ ...e, starts_on: day, ends_on: ymd(end) });
     }
   }
   return { events: out, unexpanded };

@@ -1,8 +1,8 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { currentUser } from '@/auth';
-import { getSources, getEvents, byDayOf, needsSync, syncAll } from '@/lib/calendar';
-import { daysInMonth, firstDow, MONTH_COOKIE, pickYm, shiftYm, today } from '@/lib/month';
+import { getSources, getEvents, byDayOf, needsSync, syncAll, yearWindow } from '@/lib/calendar';
+import { daysInMonth, firstDow, MONTH_COOKIE, pickYm, today } from '@/lib/month';
 import { ScheduleScreen } from '@/components/ScheduleScreen';
 
 export const dynamic = 'force-dynamic';
@@ -22,10 +22,11 @@ export default async function SchedulePage({
 
   let sources = await getSources();
 
-  // 배치를 만들지 않는다. 화면을 열 때 24시간이 지났으면 그때 가져온다.
-  // 보고 있는 달의 앞뒤 한 달까지 - 월을 넘길 때 빈 화면이 잠깐 보이지 않게
-  if (needsSync(sources)) {
-    await syncAll(sources, shiftYm(ym, -1), shiftYm(ym, 1));
+  // 배치를 만들지 않는다. 화면을 열 때 24시간이 지났거나 다른 해를 보고 있으면
+  // 그때 가져온다. 단위는 '해'다 - 생일·기념일은 그 해 전체가 보여야 쓸모가 있다
+  const { year } = yearWindow(ym);
+  if (needsSync(sources, year)) {
+    await syncAll(sources, year);
     sources = await getSources();
   }
 

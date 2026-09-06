@@ -32,6 +32,8 @@ export interface SourceRow {
   account: string | null;
   color: string;
   synced_at: string | null;
+  /** 어느 해를 채웠는가. 다른 해를 보면 그 해로 다시 가져온다 */
+  synced_year: string | null;
   sync_error: string | null;
   /** 자격이 들어 있는가. 값 자체는 화면으로 내보내지 않는다 */
   connected: 0 | 1;
@@ -54,7 +56,7 @@ export interface EventRow {
 /** 연결 목록. 자격은 있는지 여부만 내보낸다 */
 export async function getSources(): Promise<SourceRow[]> {
   return query<SourceRow>(
-    `SELECT id, owner, provider, account, color, synced_at, sync_error,
+    `SELECT id, owner, provider, account, color, synced_at, synced_year, sync_error,
             (credential IS NOT NULL) AS connected
        FROM calendar_source
       WHERE book_id = ? AND archived_at IS NULL
@@ -103,14 +105,40 @@ export function byDayOf(events: EventRow[], ym: string): Map<number, EventRow[]>
   return m;
 }
 
-/** 하나라도 24시간이 지났으면 화면을 열 때 가져온다 */
-export function needsSync(sources: SourceRow[]): boolean {
+/**
+ * 화면을 열 때 다시 가져와야 하는가.
+ *
+ * 두 경우다 - 24시간이 지났거나, **채워둔 두 해 밖을 보고 있거나.** 뒤쪽이 없으면
+ * 해를 넘겼을 때 옛 해의 일정을 그대로 보여준다. `synced_at`만으로는 알 수 없다.
+ */
+export function needsSync(sources: SourceRow[], year: string): boolean {
   const now = Date.now();
-  return sources.some(
-    (s) =>
-      s.connected === 1 &&
-      (!s.synced_at || now - new Date(s.synced_at + 'Z').getTime() > SYNC_AFTER_MS),
-  );
+  return sources.some((s) => {
+    if (s.connected !== 1) return false;
+    if (!s.synced_at || !s.synced_year) return true;
+    if (!coveredBy(s.synced_year, year)) return true;
+    return now - new Date(s.synced_at + 'Z').getTime() > SYNC_AFTER_MS;
+  });
+}
+
+/**
+ * 한 번에 **두 해**를 채운다. 보는 해와 그다음 해다.
+ *
+ * 한 해만 채우면 12월에 다음 달을 볼 때 비고, 해가 바뀌는 순간 통째로 빈다.
+ * 두 해면 어느 쪽으로 넘겨도 이미 들어 있다.
+ *
+ * `synced_year`에는 앞의 해를 적는다. 그 값이 곧 "여기부터 두 해를 채웠다"는 뜻이다.
+ */
+export function yearWindow(ym: string): { year: string; fromYm: string; toYm: string } {
+  const year = ym.slice(0, 4);
+  return { year, fromYm: `${year}-01`, toYm: `${Number(year) + 1}-12` };
+}
+
+/** 채워둔 두 해 안에 드는가 */
+function coveredBy(syncedYear: string, viewing: string): boolean {
+  const base = Number(syncedYear);
+  const y = Number(viewing);
+  return y === base || y === base + 1;
 }
 
 /* ── 구글에서 가져오기 ────────────────────────────────────── */
@@ -185,7 +213,7 @@ function toRow(g: GoogleEvent) {
  * 가져온 기간은 통째로 갈아끼운다. 조회 전용이라 병합할 이유가 없고, 원본에서
  * 지운 일정이 우리 쪽에 남는 것이 제일 나쁘다.
  */
-export async function syncSource(source: SourceRow, fromYm: string, toYm: string) {
+export async function syncSource(source: SourceRow, year: string) {
   const row = await query<{ credential: string | null }>(
     `SELECT credential FROM calendar_source WHERE id = ?`,
     [source.id],
@@ -193,12 +221,12 @@ export async function syncSource(source: SourceRow, fromYm: string, toYm: string
   const refresh = row[0]?.credential;
   if (!refresh) return;
 
-  const [from] = monthRange(fromYm);
-  const [, to] = monthRange(toYm);
+  const [from] = monthRange(`${year}-01`);
+  const [, to] = monthRange(`${Number(year) + 1}-12`);
 
   try {
     if (source.provider === 'naver') {
-      await syncNaver(source, refresh, from, to);
+      await syncNaver(source, refresh, from, to, year);
       return;
     }
     const token = await accessTokenOf(refresh);
@@ -251,9 +279,11 @@ export async function syncSource(source: SourceRow, fromYm: string, toYm: string
       );
     }
 
-    await execute(`UPDATE calendar_source SET synced_at = UTC_TIMESTAMP(), sync_error = NULL WHERE id = ?`, [
-      source.id,
-    ]);
+    await execute(
+      `UPDATE calendar_source SET synced_at = UTC_TIMESTAMP(), synced_year = ?, sync_error = NULL
+        WHERE id = ?`,
+      [year, source.id],
+    );
   } catch (err) {
     // 조용히 옛 일정을 보여주지 않는다. 화면에 그대로 띄운다
     const msg = err instanceof Error ? err.message : '알 수 없는 오류';
@@ -272,7 +302,13 @@ export async function syncSource(source: SourceRow, fromYm: string, toYm: string
  *     나머지는 손대지 않는다(`lib/caldav.ts`의 `expandInWindow`)
  *   - 한 파일에 여러 일정을 담아 보내서 기간 밖이 딸려 온다. 우리가 거른다
  */
-async function syncNaver(source: SourceRow, credential: string, from: string, to: string) {
+async function syncNaver(
+  source: SourceRow,
+  credential: string,
+  from: string,
+  to: string,
+  year: string,
+) {
   const auth = JSON.parse(credential) as CalDavAuth;
   const { events, unexpanded } = await fetchEvents(auth, from, to);
 
@@ -295,8 +331,10 @@ async function syncNaver(source: SourceRow, credential: string, from: string, to
 
   // 우리가 못 편 반복이 남아 있으면 그대로 말한다. 조용히 빠뜨리지 않는다
   await execute(
-    `UPDATE calendar_source SET synced_at = UTC_TIMESTAMP(), sync_error = ? WHERE id = ?`,
+    `UPDATE calendar_source SET synced_at = UTC_TIMESTAMP(), synced_year = ?, sync_error = ?
+      WHERE id = ?`,
     [
+      year,
       unexpanded > 0
         ? `반복 일정 ${unexpanded}건은 못 펼쳤습니다 - 매년 같은 날 말고 다른 규칙입니다`
         : null,
@@ -305,9 +343,9 @@ async function syncNaver(source: SourceRow, credential: string, from: string, to
   );
 }
 
-/** 보고 있는 달의 앞뒤 한 달까지 가져온다. 월을 넘길 때 빈 화면이 잠깐 보이지 않게 */
-export async function syncAll(sources: SourceRow[], fromYm: string, toYm: string) {
+/** 보는 해와 그다음 해를 가져온다. 어느 쪽으로 넘겨도 이미 들어 있다 */
+export async function syncAll(sources: SourceRow[], year: string) {
   for (const s of sources) {
-    if (s.connected === 1) await syncSource(s, fromYm, toYm);
+    if (s.connected === 1) await syncSource(s, year);
   }
 }
