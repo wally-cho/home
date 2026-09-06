@@ -52,8 +52,25 @@ export const WALLET: Area = {
   quick: '생활비 기록',
 };
 
+// slug를 `todo`로 두지 않는다. 그건 '할 일'이고 이 영역은 '일정'이다.
+// 나중에 할 일을 진짜로 붙이면 이름이 겹쳐 어느 쪽인지 알 수 없게 된다
+export const SCHEDULE: Area = {
+  slug: 'schedule',
+  name: '일정',
+  // 가계부와 같은 월 쿠키를 쓴다. 영역을 오가도 같은 달을 본다 -
+  // "9월 계획을 보다가 9월 일정을 본다"가 자연스러운 흐름이다
+  axis: 'month',
+  tabs: [
+    { seg: '', label: '달력', icon: 'calendar' },
+    { seg: 'list', label: '목록', icon: 'list' },
+  ],
+  // 여기서 일정을 만들지 않는다. 원본은 각자의 구글·네이버에 있고 우리는 비추기만 한다.
+  // [+]를 두면 눌러놓고 "왜 안 만들어지지" 하게 된다
+  quick: null,
+};
+
 /** 순서가 곧 스위치 시트의 순서다 */
-export const AREAS: Area[] = [WALLET];
+export const AREAS: Area[] = [WALLET, SCHEDULE];
 
 /** 마지막으로 본 영역. `/`로 들어오면 여기로 보낸다 */
 export const AREA_COOKIE = 'wa';

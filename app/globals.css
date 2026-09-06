@@ -116,6 +116,131 @@
     color: var(--ink-3);
   }
 
+  /* ── 일정 ────────────────────────────────────────────
+     사람을 색으로 구분한다. 연두·빨강은 조작과 지출이 이미 쓰고 있어 여기서는
+     안 쓴다. 색은 `calendar_source.color`가 정하고 인라인 스타일로 들어온다 */
+  .evdots {
+    display: flex;
+    gap: 2px;
+    justify-content: center;
+    margin-top: 3px;
+    min-height: 5px;
+  }
+  .evdots i {
+    width: 5px;
+    height: 5px;
+    border-radius: 99px;
+  }
+  .evmark {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 99px;
+  }
+  .evlist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  /* 각 영역이 고정 폭이다. 값이 비어도 다음 칸이 밀리지 않아야 눈이 세로로 훑는다 */
+  .evlist li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 11px 2px;
+    border-bottom: 1px solid var(--line);
+  }
+  .evlist .bar {
+    width: 3px;
+    align-self: stretch;
+    border-radius: 99px;
+    flex: none;
+  }
+  .evlist .tm {
+    width: 42px;
+    flex: none;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--ink-2);
+  }
+  .evlist .ti {
+    flex: 1;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    word-break: keep-all;
+  }
+  /* 합쳐 볼 때만 붙는다. 색은 훑을 때 쓰고 이름은 읽을 때 쓴다 */
+  .evlist .who {
+    width: 34px;
+    flex: none;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--ink-3);
+  }
+  .evlist .lo {
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+    word-break: keep-all;
+  }
+  /* 범례가 곧 필터다. 색이 무엇을 뜻하는지 보여주면서 누르면 그 사람만 남는다 */
+  .callegend.pick button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 11px;
+    border-radius: 99px;
+    background: var(--fill-2);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--ink-3);
+  }
+  .callegend.pick button[aria-pressed='true'] {
+    background: var(--fill);
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .none {
+    padding: 22px 2px;
+    font-size: 0.9375rem;
+    color: var(--ink-3);
+  }
+  .empty {
+    padding: 26px 2px;
+  }
+  .empty p {
+    margin: 0 0 10px;
+    font-size: 0.9375rem;
+    color: var(--ink-3);
+  }
+  .linkbtn {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--brand-deep);
+  }
+  /* 실패는 조용히 넘기지 않는다. 옛 일정을 보여주면서 아무 말도 안 하는 것이 최악이다 */
+  .warnbox {
+    background: var(--red-soft);
+    color: var(--red);
+    border-radius: 14px;
+    padding: 12px 14px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .syncbar {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 2px;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+  }
+  .syncbar span {
+    flex: 1;
+  }
+  .syncbar button:disabled {
+    color: var(--ink-3);
+  }
+
   /* ── 문서 (개인정보처리방침) ───────────────────────────
      로그인 밖에서 열리는 유일한 페이지다. 셸도 네비도 없다 */
   .doc {

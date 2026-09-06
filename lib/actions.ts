@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { execute, queryOne, BOOK_ID } from './db';
 import { currentUser } from '@/auth';
 import { isYm } from './month';
-import { WALLET, pathsOf } from './areas';
+import { WALLET, SCHEDULE, pathsOf } from './areas';
 
 /**
  * 쓰기는 전부 서버 액션이다. API 라우트를 만들지 않는다 -
@@ -396,4 +396,28 @@ export async function moveCategory(id: number, dir: -1 | 1) {
   await execute(`UPDATE category SET sort_order = ? WHERE id = ?`, [neighbor.sort_order, id]);
   await execute(`UPDATE category SET sort_order = ? WHERE id = ?`, [me.sort_order, neighbor.id]);
   refresh();
+}
+
+// ── 일정 (연결 해제) ────────────────────────────────────────
+
+/**
+ * 캘린더 연결을 끊는다.
+ *
+ * 자격을 지우고 가져온 일정도 함께 지운다. 조회 전용이라 남겨둘 이유가 없고,
+ * 개인정보처리방침에 "연결을 끊으면 가져온 일정을 지웁니다"라고 적어뒀다.
+ *
+ * 소스 행 자체는 아카이브로 둔다. 다시 연결할 때 이름과 색을 그대로 쓴다.
+ */
+export async function disconnectCalendar(id: number) {
+  await requireUser();
+  await execute(`DELETE FROM calendar_event WHERE source_id = ?`, [id]);
+  await execute(
+    `UPDATE calendar_source
+        SET credential = NULL, account = NULL, synced_at = NULL, sync_error = NULL,
+            archived_at = UTC_TIMESTAMP()
+      WHERE id = ? AND book_id = ?`,
+    [id, BOOK_ID],
+  );
+  refresh();
+  for (const p of pathsOf(SCHEDULE)) revalidatePath(p);
 }

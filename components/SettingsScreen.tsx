@@ -2,7 +2,15 @@
 
 import { useState } from 'react';
 import { man } from '@/lib/money';
-import { deleteMethod, moveCategory, moveMethod, saveCategory, saveMethod } from '@/lib/actions';
+import {
+  deleteMethod,
+  disconnectCalendar,
+  moveCategory,
+  moveMethod,
+  saveCategory,
+  saveMethod,
+} from '@/lib/actions';
+import type { SourceRow } from '@/lib/calendar';
 import { Nav, SettingsBar, Sheet, ToastHost, useToast } from './Shell';
 import type { CategoryRow } from '@/lib/types';
 
@@ -19,6 +27,8 @@ export interface SettingsData {
   methods: MethodItem[];
   /** 설정은 영역 밖이다. 하단 네비는 들어오기 전에 보던 영역의 칸을 그대로 둔다 */
   area: string;
+  /** 일정 영역이 끌어오는 캘린더. 자격은 있는지 여부만 온다 */
+  sources: SourceRow[];
 }
 
 const face = (name: string) => name[0];
@@ -38,7 +48,7 @@ export function SettingsScreen(props: SettingsData) {
   );
 }
 
-function Settings({ categories, usage, methods, area }: SettingsData) {
+function Settings({ categories, usage, methods, area, sources }: SettingsData) {
   const toast = useToast();
   const [editCat, setEditCat] = useState<CategoryRow | 'new' | null>(null);
   const [editMethod, setEditMethod] = useState<MethodItem | 'new' | null>(null);
@@ -118,6 +128,48 @@ function Settings({ categories, usage, methods, area }: SettingsData) {
             <button className="addgrp" style={{ marginTop: 8 }} onClick={() => setEditMethod('new')}>
               ＋ 지급 수단 추가
             </button>
+          </div>
+        </section>
+
+        {/* 일정 영역이 어디서 끌어오는지. 여기서 연결하고 끊는다 */}
+        <section>
+          <h2 className="h">
+            <span>캘린더 연결</span>
+            <span>읽기만 합니다</span>
+          </h2>
+          <div className="card">
+            {sources.filter((s) => s.connected === 1).length === 0 ? (
+              <p className="lbl" style={{ margin: '0 0 12px' }}>
+                연결한 캘린더가 없습니다.
+              </p>
+            ) : (
+              <ul className="evlist" style={{ marginBottom: 12 }}>
+                {sources
+                  .filter((s) => s.connected === 1)
+                  .map((s) => (
+                    <li key={s.id}>
+                      <i className="bar" style={{ background: s.color }} />
+                      <span className="ti">
+                        {s.owner}
+                        {s.account ? ` · ${s.account}` : ''}
+                      </span>
+                      <button
+                        className="txtbtn"
+                        onClick={async () => {
+                          await disconnectCalendar(s.id);
+                          toast('연결을 끊었습니다');
+                        }}
+                      >
+                        해제
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            )}
+            {/* 서버 액션이 아니라 링크다. 구글 동의 화면으로 나갔다 돌아온다 */}
+            <a className="addgrp" href="/api/calendar/google/start">
+              ＋ 구글 캘린더 연결
+            </a>
           </div>
         </section>
       </main>
