@@ -7,9 +7,12 @@ import { googleRedirectUri, siteUrl } from '@/lib/google';
 /**
  * 구글이 돌려보내는 자리. 코드를 refresh token으로 바꿔 저장한다.
  *
- * 소스의 `owner`는 **연결한 사람의 카카오 닉네임**이다. 사용자 테이블을 만들지
- * 않기로 했으므로 이것이 "누구 캘린더인지"를 아는 유일한 방법이고, 부부가 각자
- * 자기 카카오로 로그인해 연결하면 자연스럽게 두 줄이 된다.
+ * 소스의 신원은 **`(provider, account)`** 다 - 어느 서비스의 어느 계정인가.
+ * `owner`는 화면에 뜨는 이름일 뿐이고 설정에서 바꿀 수 있다. 이름으로 찾으면
+ * 이름을 고친 뒤 재연결할 때 옛 줄을 못 찾고 두 줄이 생긴다.
+ *
+ * 처음 연결할 때의 이름은 카카오 닉네임에서 가져온다. 사용자 테이블을 만들지
+ * 않기로 했으므로 그것이 유일한 단서다.
  */
 export const dynamic = 'force-dynamic';
 
@@ -62,13 +65,22 @@ export async function GET(request: Request) {
       if (me.ok) account = ((await me.json()) as { id?: string }).id?.slice(0, 190) ?? null;
     }
 
-    const existing = await queryOne<{ id: number; sort_order: number }>(
-      `SELECT id, sort_order FROM calendar_source
-        WHERE book_id = ? AND owner = ? AND provider = 'google'`,
-      [BOOK_ID, owner],
-    );
+    // 계정으로 찾는다. 계정을 못 읽었으면 이름으로 떨어진다 - 그때는 새로 만들기보다
+    // 옛 줄을 살리는 쪽이 낫다
+    const existing = account
+      ? await queryOne<{ id: number }>(
+          `SELECT id FROM calendar_source
+            WHERE book_id = ? AND provider = 'google' AND account = ?`,
+          [BOOK_ID, account],
+        )
+      : await queryOne<{ id: number }>(
+          `SELECT id FROM calendar_source
+            WHERE book_id = ? AND provider = 'google' AND owner = ?`,
+          [BOOK_ID, owner],
+        );
 
     if (existing) {
+      // 이름은 덮어쓰지 않는다. 설정에서 고쳐둔 것이 재연결로 되돌아가면 안 된다
       await execute(
         `UPDATE calendar_source
             SET credential = ?, account = ?, archived_at = NULL, sync_error = NULL, synced_at = NULL

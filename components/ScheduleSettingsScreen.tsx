@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { Nav, SettingsBar, ToastHost, useToast } from './Shell';
-import { disconnectCalendar } from '@/lib/actions';
+import { disconnectCalendar, renameCalendar } from '@/lib/actions';
 import type { SourceRow } from '@/lib/calendar';
 
 export interface ScheduleSettingsData {
@@ -45,22 +46,7 @@ function ScheduleSettings({ sources }: ScheduleSettingsData) {
             ) : (
               <ul className="evlist" style={{ marginBottom: 12 }}>
                 {connected.map((s) => (
-                  <li key={s.id}>
-                    <i className="bar" style={{ background: s.color }} />
-                    <span className="ti">
-                      {s.owner}
-                      {s.account ? ` · ${s.account}` : ''}
-                    </span>
-                    <button
-                      className="txtbtn"
-                      onClick={async () => {
-                        await disconnectCalendar(s.id);
-                        toast('연결을 끊었습니다');
-                      }}
-                    >
-                      해제
-                    </button>
-                  </li>
+                  <Source key={s.id} s={s} toast={toast} />
                 ))}
               </ul>
             )}
@@ -86,5 +72,45 @@ function ScheduleSettings({ sources }: ScheduleSettingsData) {
 
       <Nav onQuick={() => {}} />
     </div>
+  );
+}
+
+/**
+ * 한 줄. 이름은 그 자리에서 고친다 - 시트를 열 만한 값이 아니다.
+ * 계정 주소는 읽기만 하는 값이지만 여기 둔다. 어느 계정에 붙었는지 모르면
+ * 잘못 연결했을 때 알아챌 방법이 없다.
+ */
+function Source({ s, toast }: { s: SourceRow; toast: (m: string) => void }) {
+  const [name, setName] = useState(s.owner);
+
+  return (
+    <li>
+      <i className="bar" style={{ background: s.color }} />
+      <input
+        className="ownername"
+        value={name}
+        maxLength={12}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={async () => {
+          const next = name.trim();
+          if (!next || next === s.owner) {
+            setName(s.owner);
+            return;
+          }
+          await renameCalendar(s.id, next);
+          toast(`${next}으로 바꿨습니다`);
+        }}
+      />
+      <span className="lo">{s.account ?? ''}</span>
+      <button
+        className="txtbtn"
+        onClick={async () => {
+          await disconnectCalendar(s.id);
+          toast('연결을 끊었습니다');
+        }}
+      >
+        해제
+      </button>
+    </li>
   );
 }

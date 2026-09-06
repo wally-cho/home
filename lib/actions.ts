@@ -422,3 +422,23 @@ export async function disconnectCalendar(id: number) {
   for (const p of pathsOf(SCHEDULE)) revalidatePath(p);
   revalidatePath('/schedule/settings');
 }
+
+/**
+ * 캘린더 소스의 표시 이름을 바꾼다.
+ *
+ * 이름은 화면에 뜨는 라벨일 뿐이다. 신원은 `(provider, account)`라서 이름을 바꿔도
+ * 재연결할 때 같은 줄을 찾는다. 처음 연결할 때 카카오 닉네임이 그대로 들어오는데,
+ * 필터 칩에 들어갈 길이가 아니라 여기서 줄인다.
+ */
+export async function renameCalendar(id: number, owner: string) {
+  await requireUser();
+  const name = owner.trim().slice(0, 12);
+  if (!name) return;
+  await execute(`UPDATE calendar_source SET owner = ? WHERE id = ? AND book_id = ?`, [
+    name,
+    id,
+    BOOK_ID,
+  ]);
+  for (const p of pathsOf(SCHEDULE)) revalidatePath(p);
+  revalidatePath('/schedule/settings');
+}

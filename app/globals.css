@@ -226,11 +226,14 @@
     font-size: 0.8125rem;
     font-weight: 600;
   }
+  /* 달력 바로 아래. 마지막으로 가져온 때가 곧 "언제 기준의 화면인가"다.
+     그 사이에 원본이 바뀌었을 수 있다는 것을 '기준'이라는 말이 대신한다 */
   .syncbar {
     display: flex;
     align-items: baseline;
     gap: 10px;
-    padding: 2px;
+    padding: 0 2px;
+    margin-top: -10px;
     font-size: 0.8125rem;
     color: var(--ink-3);
   }
@@ -239,6 +242,17 @@
   }
   .syncbar button:disabled {
     color: var(--ink-3);
+  }
+  /* 이름은 그 자리에서 고친다. 시트를 열 만한 값이 아니다 */
+  .ownername {
+    flex: none;
+    width: 76px;
+    border: 0;
+    background: none;
+    padding: 2px 0;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    border-bottom: 1px solid var(--line);
   }
 
   /* ── 문서 (개인정보처리방침) ───────────────────────────

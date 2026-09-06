@@ -164,6 +164,17 @@ function Schedule({
             </div>
           ) : (
             <>
+              {/* 달력 바로 아래에 둔다. 목록 끝에 두면 안 보이고, 그 사이에 원본이
+                  바뀌었을 수 있다는 것을 모른 채 지운 일정을 계속 보게 된다 */}
+              <div className="syncbar">
+                <span>
+                  {connected.map((s) => `${s.owner} ${ago(s.synced_at)}`).join(' · ')} 기준
+                </span>
+                <button className="txtbtn" onClick={refresh} disabled={busy}>
+                  {busy ? '가져오는 중' : '지금 가져오기'}
+                </button>
+              </div>
+
               {failed.length > 0 && (
                 <div className="warnbox">
                   {failed.map((s) => (
@@ -205,14 +216,6 @@ function Schedule({
                 )}
               </div>
 
-              <div className="syncbar">
-                <span>
-                  {connected.map((s) => `${s.owner} ${ago(s.synced_at)}`).join(' · ')}
-                </span>
-                <button className="txtbtn" onClick={refresh} disabled={busy}>
-                  {busy ? '가져오는 중' : '새로고침'}
-                </button>
-              </div>
             </>
           )}
         </section>
