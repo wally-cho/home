@@ -14,7 +14,9 @@ import { AREA_COOKIE, areaBySlug } from './lib/areas';
  *     미들웨어에서 Auth.js를 부르면 엣지 런타임 제약에 걸린다.
  */
 
-const PUBLIC_PATHS = ['/login', '/api/auth', '/api/health'];
+// `/privacy`는 구글이 로그인 없이 읽어야 한다. OAuth 동의 화면을 게시하려면
+// 개인정보처리방침 주소가 공개로 열려 있어야 하고, 막아두면 게시가 반려된다.
+const PUBLIC_PATHS = ['/login', '/privacy', '/api/auth', '/api/health'];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
