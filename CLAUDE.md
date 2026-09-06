@@ -69,6 +69,12 @@
 `public/` 파일을 자기 자신에게 다시 요청하는데 그 내부 요청에는 `x-origin-verify`
 헤더가 없다. 막으면 이미지가 깨지고, 로컬에서는 절대 재현되지 않는다.
 
+**바깥으로 나가는 주소를 `request.url`로 만들지 않는다.** CloudFront가 EC2:3001로
+넘길 때 컨테이너가 보는 요청은 `http://`다. 그걸로 OAuth 리디렉션 주소를 만들면
+구글에 `http://home.devckm.kr/...`이 가고, 구글은 localhost가 아닌 http를 정책
+위반으로 막는다(`400 invalid_request`). **로컬 dev는 원래 http라 절대 재현되지 않는다.**
+`lib/google.ts`의 `siteUrl()`을 쓴다 - `AUTH_URL`만 바깥 주소를 안다. 한 번 겪었다.
+
 **푸시 전에 Docker로 빌드해본다.** CI를 디버거로 쓰면 한 번에 3분씩 태운다.
 
 ```shell

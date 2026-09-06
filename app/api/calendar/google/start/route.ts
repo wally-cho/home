@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/auth';
+import { googleRedirectUri, siteUrl } from '@/lib/google';
 
 /**
  * 구글 동의 화면으로 보낸다.
@@ -10,12 +11,12 @@ import { currentUser } from '@/auth';
  */
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request) {
-  if (!(await currentUser())) return NextResponse.redirect(new URL('/login', request.url));
+export async function GET() {
+  if (!(await currentUser())) return NextResponse.redirect(siteUrl('/login'));
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID ?? '');
-  url.searchParams.set('redirect_uri', new URL('/api/calendar/google/callback', request.url).href);
+  url.searchParams.set('redirect_uri', googleRedirectUri());
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', 'https://www.googleapis.com/auth/calendar.readonly');
   // refresh token은 이 둘이 있어야 온다. 없으면 access token만 오고 하루 뒤에 끊긴다

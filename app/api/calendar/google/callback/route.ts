@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { currentUser } from '@/auth';
 import { execute, queryOne, BOOK_ID } from '@/lib/db';
+import { googleRedirectUri, siteUrl } from '@/lib/google';
 
 /**
  * 구글이 돌려보내는 자리. 코드를 refresh token으로 바꿔 저장한다.
@@ -15,9 +16,9 @@ export const dynamic = 'force-dynamic';
 const COLORS = ['#5b8def', '#c98ba0', '#7a9e7e', '#c9a227'];
 
 export async function GET(request: Request) {
-  if (!(await currentUser())) return NextResponse.redirect(new URL('/login', request.url));
+  if (!(await currentUser())) return NextResponse.redirect(siteUrl('/login'));
 
-  const back = new URL('/settings', request.url);
+  const back = new URL(siteUrl('/settings'));
   const code = new URL(request.url).searchParams.get('code');
   const denied = new URL(request.url).searchParams.get('error');
 
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
         client_secret: process.env.GOOGLE_CLIENT_SECRET ?? '',
         code,
         grant_type: 'authorization_code',
-        redirect_uri: new URL('/api/calendar/google/callback', request.url).href,
+        redirect_uri: googleRedirectUri(),
       }),
     });
     const json = (await res.json()) as {
