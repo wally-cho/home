@@ -141,6 +141,58 @@ function coveredBy(syncedYear: string, viewing: string): boolean {
   return y === base || y === base + 1;
 }
 
+/**
+ * 한 번에 넣는다.
+ *
+ * 한 건씩 넣으면 왕복이 건수만큼 생긴다. 두 해치면 800건이 넘어서, 가져오는 데
+ * 1초도 안 걸리는 일이 넣는 데 10초가 된다. 이 동기화는 화면 렌더 안에서 돌기
+ * 때문에 그 시간이 그대로 흰 화면이 된다.
+ */
+const INSERT_CHUNK = 200;
+
+interface NewEvent {
+  uid: string;
+  title: string;
+  starts_on: string;
+  ends_on: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  location: string | null;
+}
+
+async function replaceRange(sourceId: number, from: string, to: string, events: NewEvent[]) {
+  // 그 기간을 비우고 다시 넣는다. 조회 전용이라 병합할 이유가 없고,
+  // 원본에서 지운 일정이 우리 쪽에 남는 것이 제일 나쁘다
+  await execute(
+    `DELETE FROM calendar_event WHERE source_id = ? AND starts_on <= ? AND ends_on >= ?`,
+    [sourceId, to, from],
+  );
+
+  for (let i = 0; i < events.length; i += INSERT_CHUNK) {
+    const chunk = events.slice(i, i + INSERT_CHUNK);
+    const values = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+    const params = chunk.flatMap((e) => [
+      sourceId,
+      e.uid,
+      e.title,
+      e.starts_on,
+      e.ends_on,
+      e.starts_at,
+      e.ends_at,
+      e.location,
+    ]);
+    await execute(
+      `INSERT INTO calendar_event
+         (source_id, uid, title, starts_on, ends_on, starts_at, ends_at, location)
+       VALUES ${values}
+       ON DUPLICATE KEY UPDATE
+         title = VALUES(title), starts_on = VALUES(starts_on), ends_on = VALUES(ends_on),
+         starts_at = VALUES(starts_at), ends_at = VALUES(ends_at), location = VALUES(location)`,
+      params,
+    );
+  }
+}
+
 /* ── 구글에서 가져오기 ────────────────────────────────────── */
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -249,35 +301,22 @@ export async function syncSource(source: SourceRow, year: string) {
       pageToken = json.nextPageToken;
     } while (pageToken);
 
-    // 그 기간을 비우고 다시 넣는다
-    await execute(
-      `DELETE FROM calendar_event WHERE source_id = ? AND starts_on <= ? AND ends_on >= ?`,
-      [source.id, to, from],
-    );
-
+    const rows: NewEvent[] = [];
     for (const g of events) {
       if (g.status === 'cancelled') continue;
       const t = toRow(g);
       if (!t.starts_on) continue;
-      await execute(
-        `INSERT INTO calendar_event
-           (source_id, uid, title, starts_on, ends_on, starts_at, ends_at, location)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           title = VALUES(title), starts_on = VALUES(starts_on), ends_on = VALUES(ends_on),
-           starts_at = VALUES(starts_at), ends_at = VALUES(ends_at), location = VALUES(location)`,
-        [
-          source.id,
-          g.id.slice(0, 190),
-          (g.summary ?? '제목 없음').slice(0, 120),
-          t.starts_on,
-          t.ends_on,
-          t.starts_at,
-          t.ends_at,
-          (g.location ?? null)?.slice(0, 120) ?? null,
-        ],
-      );
+      rows.push({
+        uid: g.id.slice(0, 190),
+        title: (g.summary ?? '제목 없음').slice(0, 120),
+        starts_on: t.starts_on,
+        ends_on: t.ends_on,
+        starts_at: t.starts_at,
+        ends_at: t.ends_at,
+        location: g.location ? g.location.slice(0, 120) : null,
+      });
     }
+    await replaceRange(source.id, from, to, rows);
 
     await execute(
       `UPDATE calendar_source SET synced_at = UTC_TIMESTAMP(), synced_year = ?, sync_error = NULL
@@ -312,22 +351,20 @@ async function syncNaver(
   const auth = JSON.parse(credential) as CalDavAuth;
   const { events, unexpanded } = await fetchEvents(auth, from, to);
 
-  await execute(
-    `DELETE FROM calendar_event WHERE source_id = ? AND starts_on <= ? AND ends_on >= ?`,
-    [source.id, to, from],
+  await replaceRange(
+    source.id,
+    from,
+    to,
+    events.map((e) => ({
+      uid: e.uid,
+      title: e.title,
+      starts_on: e.starts_on,
+      ends_on: e.ends_on,
+      starts_at: e.starts_at,
+      ends_at: e.ends_at,
+      location: e.location,
+    })),
   );
-
-  for (const e of events) {
-    await execute(
-      `INSERT INTO calendar_event
-         (source_id, uid, title, starts_on, ends_on, starts_at, ends_at, location)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         title = VALUES(title), starts_on = VALUES(starts_on), ends_on = VALUES(ends_on),
-         starts_at = VALUES(starts_at), ends_at = VALUES(ends_at), location = VALUES(location)`,
-      [source.id, e.uid, e.title, e.starts_on, e.ends_on, e.starts_at, e.ends_at, e.location],
-    );
-  }
 
   // 우리가 못 편 반복이 남아 있으면 그대로 말한다. 조용히 빠뜨리지 않는다
   await execute(

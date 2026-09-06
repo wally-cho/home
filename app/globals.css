@@ -371,6 +371,15 @@
   .topbar .sp {
     flex: 1;
   }
+  /* 이번 달이 아닐 때만 나온다. 톱니 왼쪽에 붙어 한 줄을 유지한다 */
+  .todaybtn {
+    padding: 5px 12px;
+    border-radius: 99px;
+    background: var(--fill);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--ink-2);
+  }
   /* 월 이동은 화살표를 쓰지 않는다. 이름을 탭해 고른다 -
      뒤로 화살표와 헷갈리지 않게 하려는 것이다 */
   .mpill {

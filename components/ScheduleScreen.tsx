@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { TopBar, Nav, ToastHost } from './Shell';
+import { TopBar, Nav, ToastHost, useMonthSwipe } from './Shell';
 import type { EventRow, SourceRow } from '@/lib/calendar';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
@@ -50,6 +50,7 @@ function Schedule({
   byDay,
 }: ScheduleData) {
   const router = useRouter();
+  const swipe = useMonthSwipe(ym);
   const [sel, setSel] = useState(isThisMonth ? todayDay : 1);
   const [busy, setBusy] = useState(false);
   /** null이면 전체. 둘을 합쳐 보는 것이 기본이다 - 같이 보려고 만든 화면이다 */
@@ -80,7 +81,8 @@ function Schedule({
         <TopBar ym={ym} />
 
         <section className="stack">
-          <div className="cal">
+          {/* 좌우로 밀면 옆 달. 화살표 버튼을 두지 않는 규칙은 그대로다 */}
+          <div className="cal" {...swipe}>
             <div className="dow">
               {DOW.map((d) => (
                 <span key={d}>{d}</span>

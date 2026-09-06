@@ -1,8 +1,8 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { MONTH_COOKIE, parseYm, today, ymOf } from '@/lib/month';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { MONTH_COOKIE, parseYm, shiftYm, today, ymOf } from '@/lib/month';
 import {
   AREAS,
   DEFAULT_AREA,
@@ -145,6 +145,19 @@ export function TopBar({ ym }: { ym?: string }) {
         )}
         {area.axis === 'month' && ym && <MonthPill ym={ym} short={many} />}
         <span className="sp" />
+        {/* 이번 달이 아닐 때만 나온다. 이미 오늘이면 눌러도 아무 일이 없는 버튼이다 */}
+        {area.axis === 'month' && ym && ym !== today().ym && (
+          <button
+            className="todaybtn"
+            onClick={() => {
+              const t = today().ym;
+              rememberMonth(t);
+              router.push(`${pathname}?m=${t}`);
+            }}
+          >
+            오늘
+          </button>
+        )}
         {/* 톱니는 지금 영역의 설정을 연다. 영역마다 바꿀 것이 다르다 */}
         <GearButton onClick={() => router.push(`/${area.slug}/settings`)} />
       </div>
@@ -168,6 +181,40 @@ export function TopBar({ ym }: { ym?: string }) {
       </Sheet>
     </>
   );
+}
+
+/**
+ * 달력을 좌우로 밀어 옆 달로 간다.
+ *
+ * 좌우 **화살표 버튼**을 두지 않는 규칙은 그대로다 - 그건 뒤로 가기와 모양이 겹쳐서다.
+ * 미는 동작에는 그 문제가 없다.
+ *
+ * 세로로 더 많이 움직였으면 무시한다. 안 그러면 스크롤하려다 달이 넘어간다.
+ */
+export function useMonthSwipe(ym: string) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const from = useRef<{ x: number; y: number } | null>(null);
+
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      const t = e.touches[0];
+      from.current = { x: t.clientX, y: t.clientY };
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      const s = from.current;
+      from.current = null;
+      if (!s) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - s.x;
+      const dy = t.clientY - s.y;
+      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      // 왼쪽으로 밀면 다음 달. 종이를 넘기는 방향이다
+      const next = shiftYm(ym, dx < 0 ? 1 : -1);
+      rememberMonth(next);
+      router.push(`${pathname}?m=${next}`);
+    },
+  };
 }
 
 /** 월 선택. 영역이 달을 쓰는 동안에만 헤더에 붙는다 */
