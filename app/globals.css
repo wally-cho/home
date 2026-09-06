@@ -1066,6 +1066,15 @@
     backdrop-filter: blur(14px);
     border-top: 1px solid var(--line);
     padding-bottom: env(safe-area-inset-bottom);
+    transition: opacity 0.2s;
+  }
+  /* 시트가 열려 있는 동안은 내린다. 시트가 지금 조작할 면이고 네비는 스크림에
+     막혀 어차피 안 눌린다. z-index로는 안 되는데, 위의 backdrop-filter가
+     iOS에서 이 요소를 합성 레이어로 올려 시트(41)보다 위에 그려지기 때문이다.
+     월 격자의 마지막 줄이 가려지던 것이 그것이다 */
+  body.sheet-open nav {
+    opacity: 0;
+    pointer-events: none;
   }
   nav .inner {
     width: 100%;

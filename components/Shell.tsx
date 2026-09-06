@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { MONTH_COOKIE, parseYm, today, ymOf } from '@/lib/month';
 import {
   AREAS,
@@ -18,6 +18,31 @@ import { ICONS } from './icons';
    입력과 편집은 전부 바텀시트다. 별도 화면으로 밀어내지 않는다 -
    화면 이동이 없으면 뒤로 가기와 월 이동이 헷갈릴 일도 없다. */
 
+/**
+ * 열려 있는 시트의 수. 한 화면에 시트가 여럿이라 세어야 한다 - 하나를 닫을 때
+ * 다른 것이 아직 열려 있으면 네비를 도로 올리면 안 된다.
+ */
+let openSheets = 0;
+
+/**
+ * 시트가 열려 있는 동안 `body`에 표시를 남긴다. 하단 네비가 그것을 보고 내려간다.
+ *
+ * z-index로는 안 된다. 네비의 `backdrop-filter`가 iOS에서 그 요소를 합성
+ * 레이어로 올려서, 시트가 더 위(41 > 30)인데도 네비가 위에 그려진다.
+ * 월 격자의 마지막 줄이 가려지는 것이 그것이다.
+ */
+function useSheetOpen(open: boolean) {
+  useEffect(() => {
+    if (!open) return;
+    openSheets += 1;
+    document.body.classList.add('sheet-open');
+    return () => {
+      openSheets -= 1;
+      if (openSheets === 0) document.body.classList.remove('sheet-open');
+    };
+  }, [open]);
+}
+
 export function Sheet({
   open,
   onClose,
@@ -27,6 +52,8 @@ export function Sheet({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  useSheetOpen(open);
+
   return (
     <>
       <div className={'scrim' + (open ? ' on' : '')} onClick={onClose} />
