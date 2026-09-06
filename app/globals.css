@@ -244,6 +244,44 @@
     color: var(--ink-3);
   }
   /* 이름은 그 자리에서 고친다. 시트를 열 만한 값이 아니다 */
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .form input {
+    padding: 12px 14px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--fill-2);
+    font-size: 0.9375rem;
+  }
+  .formrow {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    margin-top: 4px;
+  }
+  .gobtn {
+    padding: 10px 20px;
+    border-radius: 12px;
+    background: var(--brand);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 0.9375rem;
+  }
+  .gobtn:disabled {
+    background: var(--fill);
+    color: var(--ink-3);
+  }
+  /* 실패는 그대로 보여준다. 무엇이 틀렸는지 말해주지 않으면 다시 넣을 수 없다 */
+  .errline {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--red);
+  }
   .ownername {
     flex: none;
     width: 76px;

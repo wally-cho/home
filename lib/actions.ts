@@ -5,6 +5,8 @@ import { execute, queryOne, BOOK_ID } from './db';
 import { currentUser } from '@/auth';
 import { isYm } from './month';
 import { WALLET, SCHEDULE, pathsOf } from './areas';
+import { findCalendars } from './caldav';
+import { CAL_COLORS } from './calendar';
 
 /**
  * 쓰기는 전부 서버 액션이다. API 라우트를 만들지 않는다 -
@@ -439,6 +441,59 @@ export async function renameCalendar(id: number, owner: string) {
     id,
     BOOK_ID,
   ]);
+  for (const p of pathsOf(SCHEDULE)) revalidatePath(p);
+  revalidatePath('/schedule/settings');
+}
+
+/**
+ * 네이버 캘린더를 연결한다.
+ *
+ * 구글은 동의 화면으로 나갔다 오지만 네이버는 OAuth가 없다. CalDAV는 Basic 인증이라
+ * 아이디와 비밀번호를 받아 둬야 한다.
+ *
+ * **앱 비밀번호를 권한다.** 2단계 인증 안에서 만드는 값이고 캘린더에만 쓰이며 따로
+ * 폐기할 수 있다. 계정 비밀번호를 넣으면 우리 DB에 든 값이 메일·페이까지 여는
+ * 열쇠가 되고, 여기가 뚫렸을 때 캘린더 유출로 끝나지 않는다.
+ *
+ * 저장하기 전에 한 번 붙어본다. 틀린 값을 넣어두면 하루 뒤 동기화에서야 알게 되고,
+ * 그때는 무엇을 잘못 넣었는지 기억나지 않는다.
+ */
+export async function connectNaver(id: string, password: string, owner: string) {
+  await requireUser();
+  const account = id.trim();
+  const pw = password.trim();
+  const name = owner.trim().slice(0, 12) || account;
+  if (!account || !pw) throw new Error('아이디와 앱 비밀번호를 넣어주세요');
+
+  // 먼저 붙어본다. 실패하면 아무것도 저장하지 않는다
+  await findCalendars({ id: account, password: pw });
+
+  const existing = await queryOne<{ id: number }>(
+    `SELECT id FROM calendar_source WHERE book_id = ? AND provider = 'naver' AND account = ?`,
+    [BOOK_ID, account],
+  );
+
+  const credential = JSON.stringify({ id: account, password: pw });
+  if (existing) {
+    await execute(
+      `UPDATE calendar_source
+          SET credential = ?, archived_at = NULL, sync_error = NULL, synced_at = NULL
+        WHERE id = ?`,
+      [credential, existing.id],
+    );
+  } else {
+    const n = await queryOne<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM calendar_source WHERE book_id = ?`,
+      [BOOK_ID],
+    );
+    const i = Number(n?.c ?? 0);
+    await execute(
+      `INSERT INTO calendar_source (book_id, owner, provider, account, credential, color, sort_order)
+       VALUES (?, ?, 'naver', ?, ?, ?, ?)`,
+      [BOOK_ID, name, account, credential, CAL_COLORS[i % CAL_COLORS.length], i * 10],
+    );
+  }
+
   for (const p of pathsOf(SCHEDULE)) revalidatePath(p);
   revalidatePath('/schedule/settings');
 }

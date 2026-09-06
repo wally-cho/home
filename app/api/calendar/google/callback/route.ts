@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { currentUser } from '@/auth';
 import { execute, queryOne, BOOK_ID } from '@/lib/db';
 import { googleRedirectUri, siteUrl } from '@/lib/google';
+import { CAL_COLORS } from '@/lib/calendar';
 
 /**
  * 구글이 돌려보내는 자리. 코드를 refresh token으로 바꿔 저장한다.
@@ -15,8 +16,6 @@ import { googleRedirectUri, siteUrl } from '@/lib/google';
  * 않기로 했으므로 그것이 유일한 단서다.
  */
 export const dynamic = 'force-dynamic';
-
-const COLORS = ['#5b8def', '#c98ba0', '#7a9e7e', '#c9a227'];
 
 export async function GET(request: Request) {
   if (!(await currentUser())) return NextResponse.redirect(siteUrl('/login'));
@@ -96,7 +95,7 @@ export async function GET(request: Request) {
       await execute(
         `INSERT INTO calendar_source (book_id, owner, provider, account, credential, color, sort_order)
          VALUES (?, ?, 'google', ?, ?, ?, ?)`,
-        [BOOK_ID, owner, account, json.refresh_token, COLORS[i % COLORS.length], i * 10],
+        [BOOK_ID, owner, account, json.refresh_token, CAL_COLORS[i % CAL_COLORS.length], i * 10],
       );
     }
 

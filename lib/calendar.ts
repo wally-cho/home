@@ -1,5 +1,6 @@
 import { query, execute, BOOK_ID } from './db';
 import { monthRange } from './month';
+import { fetchEvents, type CalDavAuth } from './caldav';
 
 /**
  * 일정 영역. 부부 각자의 캘린더를 끌어와 한 곳에서 본다.
@@ -13,6 +14,14 @@ import { monthRange } from './month';
  */
 
 export const SYNC_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 사람을 구분하는 색. 연결한 순서대로 배정한다.
+ *
+ * 연두와 빨강을 넣지 않는다 - 그 둘은 조작과 지출이 이미 쓰고 있어서, 정보에 또 쓰면
+ * 무엇이 버튼인지 구분이 안 된다.
+ */
+export const CAL_COLORS = ['#5b8def', '#c98ba0', '#7a9e7e', '#c9a227'];
 
 export type Provider = 'google' | 'naver';
 
@@ -188,8 +197,9 @@ export async function syncSource(source: SourceRow, fromYm: string, toYm: string
   const [, to] = monthRange(toYm);
 
   try {
-    if (source.provider !== 'google') {
-      throw new Error('아직 구글만 가져옵니다');
+    if (source.provider === 'naver') {
+      await syncNaver(source, refresh, from, to);
+      return;
     }
     const token = await accessTokenOf(refresh);
 
@@ -252,6 +262,47 @@ export async function syncSource(source: SourceRow, fromYm: string, toYm: string
       source.id,
     ]);
   }
+}
+
+/**
+ * 네이버는 CalDAV다. `credential`에 아이디와 앱 비밀번호가 JSON으로 들어 있다.
+ *
+ * 구글과 다른 점이 하나 있다 - 반복 일정을 서버가 펼쳐 준다는 보장이 없다.
+ * `<C:expand>`를 요청하지만 지원하지 않으면 원본이 그대로 오고, 그때는 첫 회만
+ * 보인다. 조용히 넘기지 않고 `sync_error`에 적어 화면에 띄운다.
+ */
+async function syncNaver(source: SourceRow, credential: string, from: string, to: string) {
+  const auth = JSON.parse(credential) as CalDavAuth;
+  const events = await fetchEvents(auth, from, to);
+
+  await execute(
+    `DELETE FROM calendar_event WHERE source_id = ? AND starts_on <= ? AND ends_on >= ?`,
+    [source.id, to, from],
+  );
+
+  for (const e of events) {
+    await execute(
+      `INSERT INTO calendar_event
+         (source_id, uid, title, starts_on, ends_on, starts_at, ends_at, location)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         title = VALUES(title), starts_on = VALUES(starts_on), ends_on = VALUES(ends_on),
+         starts_at = VALUES(starts_at), ends_at = VALUES(ends_at), location = VALUES(location)`,
+      [source.id, e.uid, e.title, e.starts_on, e.ends_on, e.starts_at, e.ends_at, e.location],
+    );
+  }
+
+  // 서버가 안 펼친 반복 일정이 섞여 있으면 첫 회만 보인다. 그대로 말한다
+  const unexpanded = events.filter((e) => e.recurring).length;
+  await execute(
+    `UPDATE calendar_source SET synced_at = UTC_TIMESTAMP(), sync_error = ? WHERE id = ?`,
+    [
+      unexpanded > 0
+        ? `반복 일정 ${unexpanded}건은 첫 회만 보입니다 - 네이버가 펼쳐 주지 않습니다`
+        : null,
+      source.id,
+    ],
+  );
 }
 
 /** 보고 있는 달의 앞뒤 한 달까지 가져온다. 월을 넘길 때 빈 화면이 잠깐 보이지 않게 */
