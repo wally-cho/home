@@ -158,7 +158,7 @@ function Schedule({
           {connected.length === 0 ? (
             <div className="empty">
               <p>연결한 캘린더가 없습니다.</p>
-              <button className="linkbtn" onClick={() => router.push('/settings')}>
+              <button className="linkbtn" onClick={() => router.push('/schedule/settings')}>
                 설정에서 연결하기
               </button>
             </div>

@@ -6,7 +6,6 @@ import { MONTH_COOKIE, parseYm, today, ymOf } from '@/lib/month';
 import {
   AREAS,
   DEFAULT_AREA,
-  areaBySlug,
   areaOfPath,
   hrefOf,
   type Area,
@@ -146,7 +145,8 @@ export function TopBar({ ym }: { ym?: string }) {
         )}
         {area.axis === 'month' && ym && <MonthPill ym={ym} short={many} />}
         <span className="sp" />
-        <GearButton onClick={() => router.push('/settings')} />
+        {/* 톱니는 지금 영역의 설정을 연다. 영역마다 바꿀 것이 다르다 */}
+        <GearButton onClick={() => router.push(`/${area.slug}/settings`)} />
       </div>
 
       <Sheet open={pickArea} onClose={() => setPickArea(false)}>
@@ -238,15 +238,21 @@ function Chevron() {
   );
 }
 
-/** 설정 화면의 맨 위 줄. 영역 밖이라 고를 것이 없으므로 제목과 나가는 길만 둔다 */
-export function SettingsBar() {
+/**
+ * 설정 화면의 맨 위 줄.
+ *
+ * 설정은 영역마다 따로다 - 한 화면에 섞으면 영역이 늘수록 잡동사니 서랍이 된다.
+ * 그래서 여기에는 월 선택이 없고 어느 영역의 설정인지를 제목이 말한다.
+ */
+export function SettingsBar({ title }: { title: string }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const area = areaOfPath(pathname) ?? DEFAULT_AREA;
   return (
     <div className="topbar">
-      <span className="where">설정</span>
+      <span className="where">{title}</span>
       <span className="sp" />
-      {/* '/'는 마지막으로 본 영역으로 보낸다. 어디서 설정에 들어왔든 그리로 돌아간다 */}
-      <button className="txtbtn" onClick={() => router.push('/')}>
+      <button className="txtbtn" onClick={() => router.push(`/${area.slug}`)}>
         완료
       </button>
     </div>
@@ -269,14 +275,10 @@ function GearButton({ onClick }: { onClick: () => void }) {
    지금 영역의 화면들이다. 영역 이름은 여기 오지 않는다 - 그것은 상단 스위치가
    맡는다. 칸은 `lib/areas.ts`의 표에서 오므로 영역을 붙여도 여기는 안 고친다. */
 
-/**
- * @param area 영역 밖(설정)에서 쓸 때 어느 영역의 칸을 보여줄지. 서버가
- *   쿠키에서 읽어 넘긴다 - 클라이언트에서 읽으면 서버가 그린 것과 어긋난다
- */
-export function Nav({ onQuick, area: slug }: { onQuick: () => void; area?: string }) {
+export function Nav({ onQuick }: { onQuick: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
-  const area = areaOfPath(pathname) ?? areaBySlug(slug) ?? DEFAULT_AREA;
+  const area = areaOfPath(pathname) ?? DEFAULT_AREA;
 
   // [+]는 가운데다. 왼쪽과 오른쪽에 반씩 나눠 놓는다
   const half = Math.ceil(area.tabs.length / 2);

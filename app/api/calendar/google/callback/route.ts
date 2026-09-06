@@ -18,7 +18,7 @@ const COLORS = ['#5b8def', '#c98ba0', '#7a9e7e', '#c9a227'];
 export async function GET(request: Request) {
   if (!(await currentUser())) return NextResponse.redirect(siteUrl('/login'));
 
-  const back = new URL(siteUrl('/settings'));
+  const back = new URL(siteUrl('/schedule/settings'));
   const code = new URL(request.url).searchParams.get('code');
   const denied = new URL(request.url).searchParams.get('error');
 

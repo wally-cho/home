@@ -19,11 +19,12 @@ async function requireUser(): Promise<string> {
   return id;
 }
 
-// 가계부 영역의 화면들과 설정. 경로를 손으로 적지 않는다 -
-// 새 화면을 붙였을 때 그 화면만 옛 데이터를 보여주게 된다
+// 가계부 영역의 화면들. 경로를 손으로 적지 않는다 -
+// 새 화면을 붙였을 때 그 화면만 옛 데이터를 보여주게 된다.
+// 설정은 영역 안에 있으므로(`/wallet/settings`) 함께 턴다
 function refresh() {
   for (const p of pathsOf(WALLET)) revalidatePath(p);
-  revalidatePath('/settings');
+  revalidatePath('/wallet/settings');
 }
 
 // ── 생활비 기록 ─────────────────────────────────────────────
@@ -418,6 +419,6 @@ export async function disconnectCalendar(id: number) {
       WHERE id = ? AND book_id = ?`,
     [id, BOOK_ID],
   );
-  refresh();
   for (const p of pathsOf(SCHEDULE)) revalidatePath(p);
+  revalidatePath('/schedule/settings');
 }
