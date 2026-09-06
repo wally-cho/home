@@ -25,8 +25,10 @@ export interface CalDavEvent {
   starts_at: string | null;
   ends_at: string | null;
   location: string | null;
-  /** 서버가 반복을 안 펼쳐서 원본 규칙이 그대로 온 경우 */
-  recurring: boolean;
+  /** 원본 반복 규칙. 네이버는 펼쳐 주지 않으므로 그대로 온다 */
+  rrule: string | null;
+  /** 예외 날짜나 개별 수정이 붙어 있는가. 있으면 우리가 펴지 않는다 */
+  hasException: boolean;
 }
 
 function authHeader(a: CalDavAuth): string {
@@ -133,11 +135,11 @@ function dayBefore(ymd: string): string {
 /** 하나의 VCALENDAR 안에 든 VEVENT들을 우리 행으로 옮긴다 */
 export function parseEvents(ics: string): CalDavEvent[] {
   const out: CalDavEvent[] = [];
-  let cur: Partial<CalDavEvent> & { allDay?: boolean; cancelled?: boolean } | null = null;
+  let cur: (Partial<CalDavEvent> & { allDay?: boolean; cancelled?: boolean }) | null = null;
 
   for (const line of unfold(ics)) {
     if (line.startsWith('BEGIN:VEVENT')) {
-      cur = { recurring: false };
+      cur = { rrule: null, hasException: false };
       continue;
     }
     if (line.startsWith('END:VEVENT')) {
@@ -150,7 +152,8 @@ export function parseEvents(ics: string): CalDavEvent[] {
           starts_at: cur.starts_at ?? null,
           ends_at: cur.ends_at ?? null,
           location: cur.location ? cur.location.slice(0, 120) : null,
-          recurring: cur.recurring ?? false,
+          rrule: cur.rrule ?? null,
+          hasException: cur.hasException ?? false,
         });
       }
       cur = null;
@@ -177,8 +180,13 @@ export function parseEvents(ics: string): CalDavEvent[] {
         if (f.value.trim().toUpperCase() === 'CANCELLED') cur.cancelled = true;
         break;
       case 'RRULE':
-        // 서버가 안 펼쳤다는 뜻이다. 우리가 풀지 않고 표시만 한다
-        cur.recurring = true;
+        cur.rrule = f.value.trim().toUpperCase();
+        break;
+      case 'EXDATE':
+      case 'RECURRENCE-ID':
+        // 예외가 붙은 반복은 우리가 펴지 않는다. 규칙만 보고 계산하면
+        // 옮기거나 취소한 회차에서 원본과 어긋나고 그 차이를 설명할 방법이 없다
+        cur.hasException = true;
         break;
       case 'DTSTART': {
         const m = moment(f.value, f.params);
@@ -196,6 +204,82 @@ export function parseEvents(ics: string): CalDavEvent[] {
     }
   }
   return out;
+}
+
+/* ── 반복 일정 ───────────────────────────────────────────── */
+
+/**
+ * `매년 m월 d일`만 편다.
+ *
+ * 네이버는 `<C:expand>`를 지원하지 않아 반복 일정의 원본이 그대로 온다. 그대로 두면
+ * 매년 오는 생일이 시작일(1964년 같은 날)에만 찍힌다.
+ *
+ * **확실한 것만 편다.** 생일·기념일이 쓰는 이 한 가지 형태는 예외가 붙지 않는 한
+ * 계산해도 원본과 어긋날 여지가 없다 - 매년 그 날이다. 요일 규칙·간격·횟수 제한이
+ * 붙거나 예외가 하나라도 있으면 손대지 않고 몇 건인지 세어서 화면에 적는다.
+ * 상환표를 계산하지 않는 것과 같은 이유다.
+ */
+function yearlyOn(rrule: string): { month: number; day: number } | null {
+  const p = new Map(
+    rrule.split(';').map((kv) => {
+      const [k, v] = kv.split('=');
+      return [k, v ?? ''];
+    }),
+  );
+  if (p.get('FREQ') !== 'YEARLY') return null;
+  if (p.has('INTERVAL') && p.get('INTERVAL') !== '1') return null;
+  // 다른 조건이 붙으면 우리가 아는 형태가 아니다
+  for (const k of p.keys()) {
+    if (!['FREQ', 'INTERVAL', 'BYMONTH', 'BYMONTHDAY', 'WKST'].includes(k)) return null;
+  }
+  const month = Number(p.get('BYMONTH'));
+  const day = Number(p.get('BYMONTHDAY'));
+  if (!month || !day) return null;
+  return { month, day };
+}
+
+/**
+ * 기간에 걸치는 것만 남기고, 펼 수 있는 반복은 편다.
+ *
+ * 기간 밖을 우리가 버려야 한다 - 네이버는 한 파일에 여러 일정을 담아 보내서
+ * 주소 목록이 걸러져도 내용에는 기간 밖 일정이 딸려 온다.
+ */
+export function expandInWindow(
+  events: CalDavEvent[],
+  from: string,
+  to: string,
+): { events: CalDavEvent[]; unexpanded: number } {
+  const out: CalDavEvent[] = [];
+  let unexpanded = 0;
+  const fromYear = Number(from.slice(0, 4));
+  const toYear = Number(to.slice(0, 4));
+
+  for (const e of events) {
+    if (!e.rrule) {
+      if (e.starts_on <= to && e.ends_on >= from) out.push(e);
+      continue;
+    }
+
+    const on = e.hasException ? null : yearlyOn(e.rrule);
+    if (!on) {
+      // 못 펴는 반복. 첫 회가 기간 안이면 그것만 보이고, 아니면 아예 안 보인다
+      unexpanded += 1;
+      if (e.starts_on <= to && e.ends_on >= from) out.push(e);
+      continue;
+    }
+
+    const span = Number(e.ends_on.slice(8, 10)) - Number(e.starts_on.slice(8, 10));
+    for (let y = fromYear; y <= toYear; y++) {
+      // 시작 연도 이전은 아직 없던 일이다
+      if (y < Number(e.starts_on.slice(0, 4))) continue;
+      const d = `${y}-${String(on.month).padStart(2, '0')}-${String(on.day).padStart(2, '0')}`;
+      if (d < from || d > to) continue;
+      const end = new Date(`${d}T00:00:00Z`);
+      end.setUTCDate(end.getUTCDate() + Math.max(0, span));
+      out.push({ ...e, starts_on: d, ends_on: end.toISOString().slice(0, 10) });
+    }
+  }
+  return { events: out, unexpanded };
 }
 
 /** iCalendar는 쉼표·세미콜론·역슬래시를 이스케이프한다 */
@@ -273,7 +357,7 @@ export async function fetchEvents(
   auth: CalDavAuth,
   from: string,
   to: string,
-): Promise<CalDavEvent[]> {
+): Promise<{ events: CalDavEvent[]; unexpanded: number }> {
   const start = stamp(from);
   const end = stamp(to, true);
   const query = `<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
@@ -309,14 +393,20 @@ export async function fetchEvents(
     }
   }
 
-  // 반복을 펼치면 인스턴스마다 UID가 같다. 시작일을 붙여 유일하게 만든다
+  const { events, unexpanded } = expandInWindow(found, from, to);
+
+  // 펼친 인스턴스는 UID가 같다. 시작일을 붙여 유일하게 만든다 -
+  // 안 그러면 uk_event가 마지막 하나만 남긴다
   const seen = new Set<string>();
-  return found.map((e) => {
-    let uid = `${e.uid}:${e.starts_on}`;
-    while (seen.has(uid)) uid += '+';
-    seen.add(uid);
-    return { ...e, uid: uid.slice(0, 190) };
-  });
+  return {
+    events: events.map((e) => {
+      let uid = `${e.uid}:${e.starts_on}`;
+      while (seen.has(uid)) uid += '+';
+      seen.add(uid);
+      return { ...e, uid: uid.slice(0, 190) };
+    }),
+    unexpanded,
+  };
 }
 
 function decodeXml(v: string): string {

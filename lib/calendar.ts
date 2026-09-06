@@ -267,13 +267,14 @@ export async function syncSource(source: SourceRow, fromYm: string, toYm: string
 /**
  * 네이버는 CalDAV다. `credential`에 아이디와 앱 비밀번호가 JSON으로 들어 있다.
  *
- * 구글과 다른 점이 하나 있다 - 반복 일정을 서버가 펼쳐 준다는 보장이 없다.
- * `<C:expand>`를 요청하지만 지원하지 않으면 원본이 그대로 오고, 그때는 첫 회만
- * 보인다. 조용히 넘기지 않고 `sync_error`에 적어 화면에 띄운다.
+ * 구글과 다른 점이 둘 있다.
+ *   - 반복을 서버가 안 펼친다. 생일·기념일이 쓰는 `매년 m월 d일`만 우리가 펴고
+ *     나머지는 손대지 않는다(`lib/caldav.ts`의 `expandInWindow`)
+ *   - 한 파일에 여러 일정을 담아 보내서 기간 밖이 딸려 온다. 우리가 거른다
  */
 async function syncNaver(source: SourceRow, credential: string, from: string, to: string) {
   const auth = JSON.parse(credential) as CalDavAuth;
-  const events = await fetchEvents(auth, from, to);
+  const { events, unexpanded } = await fetchEvents(auth, from, to);
 
   await execute(
     `DELETE FROM calendar_event WHERE source_id = ? AND starts_on <= ? AND ends_on >= ?`,
@@ -292,13 +293,12 @@ async function syncNaver(source: SourceRow, credential: string, from: string, to
     );
   }
 
-  // 서버가 안 펼친 반복 일정이 섞여 있으면 첫 회만 보인다. 그대로 말한다
-  const unexpanded = events.filter((e) => e.recurring).length;
+  // 우리가 못 편 반복이 남아 있으면 그대로 말한다. 조용히 빠뜨리지 않는다
   await execute(
     `UPDATE calendar_source SET synced_at = UTC_TIMESTAMP(), sync_error = ? WHERE id = ?`,
     [
       unexpanded > 0
-        ? `반복 일정 ${unexpanded}건은 첫 회만 보입니다 - 네이버가 펼쳐 주지 않습니다`
+        ? `반복 일정 ${unexpanded}건은 못 펼쳤습니다 - 매년 같은 날 말고 다른 규칙입니다`
         : null,
       source.id,
     ],
