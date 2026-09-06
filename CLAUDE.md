@@ -1,4 +1,4 @@
-# wallet 작업 규칙
+# home 작업 규칙
 
 부부 둘이 쓰는 사이트. **영역**을 여러 개 담고, 가계부(`/wallet`)가 그 첫 번째다.
 
@@ -45,8 +45,8 @@
 ## 깨뜨리면 안 되는 것
 
 **tium 자원을 건드리지 않는다.** EC2 호스트와 RDS 인스턴스만 공유하고 나머지는 전부
-분리한다 - 전용 DB·전용 계정·전용 도커 네트워크·전용 보안그룹·`/wallet/prod/*` SSM.
-언제든 지워도 tium에 흔적이 남지 않아야 한다(`infra/teardown-wallet.sh`).
+분리한다 - 전용 DB·전용 계정·전용 도커 네트워크·전용 보안그룹·`/home/prod/*` SSM.
+언제든 지워도 tium에 흔적이 남지 않아야 한다(`infra/teardown-home.sh`).
 
 **`query()`는 준비된 문장(`execute`)이다.** `IN (?)`에 배열을 넣으면 펼쳐지지 않고
 **조용히 0행**이 된다. 오류도 안 난다. 목록 조건이 필요하면 DB에서 읽은 정수를 문자열로
@@ -67,8 +67,8 @@
 **푸시 전에 Docker로 빌드해본다.** CI를 디버거로 쓰면 한 번에 3분씩 태운다.
 
 ```shell
-docker build -t wallet:verify .
-docker run --rm -p 3101:3001 -e DATABASE_URL=… -e ORIGIN_VERIFY_SECRET=아무값 wallet:verify
+docker build -t home:verify .
+docker run --rm -p 3101:3001 -e DATABASE_URL=… -e ORIGIN_VERIFY_SECRET=아무값 home:verify
 ```
 
 `ORIGIN_VERIFY_SECRET`을 **반드시 넣고** 띄운다. 로컬 dev에는 없어서 검증이 no-op이고,
@@ -85,12 +85,12 @@ docker run --rm -p 3101:3001 -e DATABASE_URL=… -e ORIGIN_VERIFY_SECRET=아무�
 그것만 믿으면 목록에서 뺀 계정의 **이미 발급된 세션 쿠키가 만료될 때까지 계속 통과한다.**
 페이지와 서버 액션은 전부 `currentUser()`를 거친다 - 이 검사를 빼지 않는다.
 
-**카카오 회원번호는 앱마다 다르다.** 같은 계정이라도 handari 앱과 wallet 앱에서 서로 다른
+**카카오 회원번호는 앱마다 다르다.** 같은 계정이라도 handari 앱과 home 앱에서 서로 다른
 번호를 받는다(앱 그룹을 묶지 않았으면). 다른 서비스의 DB에서 가져다 쓸 수 없고,
 **이 앱으로 한 번 로그인해서 로그에 찍힌 번호**를 써야 한다. 그래서 `signIn` 콜백은
 통과든 거절이든 번호를 로그에 남긴다.
 
-**로컬에서는 DB를 쓰지 않는다.** 개발 DB가 따로 없고 RDS의 같은 `wallet` 데이터베이스가
+**로컬에서는 DB를 쓰지 않는다.** 개발 DB가 따로 없고 RDS의 같은 `home` 데이터베이스가
 곧 서비스 데이터라서, 로컬에서 띄워 만지면 테스트 데이터가 그대로 서비스에 보인다.
 동작 확인은 서버에서 한다.
 

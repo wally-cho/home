@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'wallet',
+  title: 'home',
   description: '월 계획과 생활비를 한 곳에서',
   // 급여·대출이 든 화면이다. 검색에 잡히는 건 확실한 유출이다
   robots: { index: false, follow: false },

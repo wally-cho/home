@@ -1,4 +1,4 @@
-# wallet
+# home
 
 부부 둘이 쓰는 사이트. 모바일 웹.
 
@@ -35,9 +35,9 @@ npm run loans:import  # data/*.csv 상환표 넣기
 npm run typecheck && npm run lint && npm run build
 ```
 
-`.env.local`이 필요하다. 값은 AWS SSM `/wallet/prod/*`에 있다.
+`.env.local`이 필요하다. 값은 AWS SSM `/home/prod/*`에 있다.
 
-**로컬에서는 DB를 쓰지 않는다.** 개발 DB가 따로 없고 RDS의 같은 `wallet`
+**로컬에서는 DB를 쓰지 않는다.** 개발 DB가 따로 없고 RDS의 같은 `home`
 데이터베이스가 곧 서비스 데이터다. 터널은 마이그레이션과 임포트가 필요할 때만 연다.
 푸시 전 검증은 `typecheck`·`lint`·`build`와 `docker build`로 한다 - 그 넷은 DB에 붙지 않는다.
 

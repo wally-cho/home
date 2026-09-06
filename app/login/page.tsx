@@ -15,7 +15,7 @@ export default async function LoginPage({
   return (
     <div className="app" style={{ display: 'grid', placeItems: 'center', padding: '0 28px' }}>
       <div style={{ width: '100%', textAlign: 'center' }}>
-        <div style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.04em' }}>wallet</div>
+        <div style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.04em' }}>home</div>
         <p className="sub kr" style={{ margin: '10px 0 32px' }}>
           월 계획과 생활비를 한 곳에서 봅니다.
         </p>

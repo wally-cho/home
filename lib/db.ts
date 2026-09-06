@@ -7,7 +7,7 @@ export type SqlParam = string | number | boolean | Date | null;
 
 declare global {
   // 개발 중 HMR로 모듈이 다시 평가돼도 풀이 새로 생기지 않게 한다
-  var __walletPool: mysql.Pool | undefined;
+  var __homePool: mysql.Pool | undefined;
 }
 
 function createPool(): mysql.Pool {
@@ -49,10 +49,10 @@ function withUtcSession(p: mysql.Pool): mysql.Pool {
  * DATABASE_URL이 없어 빌드가 깨진다. CI와 Docker 빌드에는 그 값이 없고, 있을 이유도 없다.
  */
 export function getPool(): mysql.Pool {
-  if (!global.__walletPool) {
-    global.__walletPool = withUtcSession(createPool());
+  if (!global.__homePool) {
+    global.__homePool = withUtcSession(createPool());
   }
-  return global.__walletPool;
+  return global.__homePool;
 }
 
 /** SELECT 전용. 호출부에서 행 타입을 명시한다 */

@@ -1,20 +1,20 @@
 # EC2의 /home/ubuntu/infra/ 에 둔다.
 #
 # tium과 완전히 분리한다. 지우면 흔적이 남지 않아야 한다.
-#   - 별도 네트워크(wallet-network). tium-network에 합류하지 않는다
-#     → wallet 컨테이너는 tium-redis / tium-server에 접근할 수 없다
+#   - 별도 네트워크(home-network). tium-network에 합류하지 않는다
+#     → home 컨테이너는 tium-redis / tium-server에 접근할 수 없다
 #   - tium의 nginx를 거치지 않는다. CloudFront가 3001로 직접 온다
 #     → tium nginx 설정을 건드리지 않으므로 reload 사고로 tium API가 죽을 일이 없다
 #   - 블루/그린 없음. 취미 프로젝트에 무중단 배포는 과하다
 #
-# 삭제: infra/teardown-wallet.sh
+# 삭제: infra/teardown-home.sh
 
 services:
-  wallet:
-    container_name: wallet
+  home:
+    container_name: home
     image: ${DOCKER_IMAGE}
     env_file:
-      - ./wallet.env # deploy-wallet.sh 가 SSM에서 받아 만든다. 커밋 대상 아님
+      - ./home.env # deploy-home.sh 가 SSM에서 받아 만든다. 커밋 대상 아님
     environment:
       - NODE_ENV=production
       - TZ=Asia/Seoul
@@ -22,13 +22,13 @@ services:
       # 컨테이너 안에서도 3001로 듣는다(Dockerfile의 PORT=3001).
       # 포트 번호가 한 개면 헬스체크·오리진 설정을 헷갈릴 일이 없다.
       #
-      # CloudFront가 직접 붙는다. 인바운드는 전용 보안그룹 wallet-sg에서
+      # CloudFront가 직접 붙는다. 인바운드는 전용 보안그룹 home-sg에서
       # CloudFront 관리형 prefix list(pl-22a6434b)만 허용한다.
       # tium이 쓰는 sg-05d78c3cfeb18ea4c 는 규칙 쿼터가 꽉 차서 쓰지 않는다
       # (prefix list 규칙 1개가 쿼터에서 55개로 계산된다).
       - '3001:3001'
     networks:
-      - wallet-network
+      - home-network
     restart: always
     # EC2 메모리가 3.7GB고 tium 서버(Xmx 768m)와 handari(512m)가 이미 올라가 있다.
     # 세 번째 서비스라 상한을 더 낮게 잡는다. 붙인 뒤 free -m 을 다시 본다
@@ -52,8 +52,8 @@ services:
       start_period: 20s
 
 networks:
-  # deploy-wallet.sh가 미리 만든다. compose가 소유권을 주장하면
+  # deploy-home.sh가 미리 만든다. compose가 소유권을 주장하면
   # "incorrect label" 로 배포가 막힌다
-  wallet-network:
-    name: wallet-network
+  home-network:
+    name: home-network
     external: true
