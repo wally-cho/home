@@ -160,13 +160,13 @@ interface NewEvent {
   location: string | null;
 }
 
-async function replaceRange(sourceId: number, from: string, to: string, events: NewEvent[]) {
-  // 그 기간을 비우고 다시 넣는다. 조회 전용이라 병합할 이유가 없고,
-  // 원본에서 지운 일정이 우리 쪽에 남는 것이 제일 나쁘다
-  await execute(
-    `DELETE FROM calendar_event WHERE source_id = ? AND starts_on <= ? AND ends_on >= ?`,
-    [sourceId, to, from],
-  );
+async function replaceRange(sourceId: number, events: NewEvent[]) {
+  // 그 소스의 것을 **전부** 지우고 다시 넣는다.
+  //
+  // 창 안만 지우면 다른 해를 봤던 흔적이 남는다 - 달력을 밀어 2029년까지 갔다가
+  // 돌아오면 2029·2030이 그대로 쌓인다. 우리가 보여주는 것은 언제나 방금 채운
+  // 두 해뿐이라 그 밖은 쓰레기고, 남겨두면 원본에서 지운 일정이 거기 살아 있다.
+  await execute(`DELETE FROM calendar_event WHERE source_id = ?`, [sourceId]);
 
   for (let i = 0; i < events.length; i += INSERT_CHUNK) {
     const chunk = events.slice(i, i + INSERT_CHUNK);
@@ -316,7 +316,7 @@ export async function syncSource(source: SourceRow, year: string) {
         location: g.location ? g.location.slice(0, 120) : null,
       });
     }
-    await replaceRange(source.id, from, to, rows);
+    await replaceRange(source.id, rows);
 
     await execute(
       `UPDATE calendar_source SET synced_at = UTC_TIMESTAMP(), synced_year = ?, sync_error = NULL
@@ -353,8 +353,6 @@ async function syncNaver(
 
   await replaceRange(
     source.id,
-    from,
-    to,
     events.map((e) => ({
       uid: e.uid,
       title: e.title,
