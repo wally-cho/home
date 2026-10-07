@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { won } from '@/lib/money';
-import { TopBar, Nav, ToastHost } from './Shell';
+import { man, manToWon, won } from '@/lib/money';
+import { saveFlatLoan } from '@/lib/actions';
+import { TopBar, Nav, Sheet, ToastHost, useToast } from './Shell';
 import type { LoanView } from '@/lib/loans';
 
 /**
@@ -19,6 +20,8 @@ export function LoansScreen({ ym, loans }: { ym: string; loans: LoanView[] }) {
 
 function Loans({ ym, loans }: { ym: string; loans: LoanView[] }) {
   const [open, setOpen] = useState<number[]>([]);
+  const [editing, setEditing] = useState<LoanView | null>(null);
+  const toast = useToast();
   // 펼친 표 안에 예정일과 영업일이 다른 달이 있을 때만 범례를 둔다
   const shifted = loans.some(
     (l) => open.includes(l.id) && l.rows.some((r) => r.business_date && r.business_date !== r.due_date),
@@ -37,12 +40,16 @@ function Loans({ ym, loans }: { ym: string; loans: LoanView[] }) {
               return (
                 <div key={l.id} className={'card lcard' + (isOpen ? ' open' : '')}>
                   {l.flat ? (
-                    <div className="lhead">
+                    // 상환표가 없는 대출은 원금과 이자를 손으로 고친다. 중도상환하면 바뀐다
+                    <button className="lhead" onClick={() => setEditing(l)}>
                       <span className="lt">
                         <b>{l.name}</b>
                         <span>{l.note}</span>
                       </span>
-                    </div>
+                      <svg className="chev" viewBox="0 0 24 24">
+                        <path d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
                   ) : (
                     <button className="lhead" onClick={() => toggle(l.id)} aria-expanded={isOpen}>
                       <span className="lt">
@@ -131,6 +138,78 @@ function Loans({ ym, loans }: { ym: string; loans: LoanView[] }) {
       </main>
 
       <Nav onQuick={() => {}} />
+
+      {editing && <FlatLoanSheet loan={editing} onClose={() => setEditing(null)} toast={toast} />}
     </div>
+  );
+}
+
+/** 만기일시상환 대출. 상환표가 없으니 남은 원금과 매월 이자가 전부다 */
+function FlatLoanSheet({
+  loan,
+  onClose,
+  toast,
+}: {
+  loan: LoanView;
+  onClose: () => void;
+  toast: (msg: string) => void;
+}) {
+  const [balance, setBalance] = useState(loan.balance === null ? '' : man(loan.balance));
+  const [monthly, setMonthly] = useState(loan.thisMonth === null ? '' : man(loan.thisMonth));
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Sheet open onClose={onClose}>
+      <div className="sh">
+        <b>{loan.name}</b>
+      </div>
+      <div className="two">
+        <div className="f">
+          <span className="lbl">남은 원금 (만원)</span>
+          <input
+            className="inp n"
+            inputMode="decimal"
+            value={balance}
+            onChange={(e) => setBalance(e.target.value)}
+          />
+        </div>
+        <div className="f">
+          <span className="lbl">매월 이자 (만원)</span>
+          <input
+            className="inp n"
+            inputMode="decimal"
+            value={monthly}
+            onChange={(e) => setMonthly(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="btns">
+        <button className="btn sub" style={{ flex: '0 0 96px' }} onClick={onClose}>
+          취소
+        </button>
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await saveFlatLoan({
+                id: loan.id,
+                balance: manToWon(balance),
+                monthly: manToWon(monthly),
+              });
+              onClose();
+              toast('저장했습니다');
+            } catch (e) {
+              toast((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          저장
+        </button>
+      </div>
+    </Sheet>
   );
 }

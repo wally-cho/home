@@ -347,6 +347,27 @@ export async function moveMethod(id: number, dir: -1 | 1) {
   refresh();
 }
 
+// ── 대출 ────────────────────────────────────────────────────
+
+/**
+ * 상환표가 없는 대출(만기일시상환)의 남은 원금과 월 이자를 고친다.
+ *
+ * 상환표가 있는 대출은 고치지 않는다 - 그쪽 숫자는 은행 표가 원본이고,
+ * 여기서 바꾸면 표와 어긋난 값을 설명할 방법이 없다.
+ */
+export async function saveFlatLoan(input: { id: number; balance: number; monthly: number }) {
+  await requireUser();
+  if (!Number.isInteger(input.balance) || input.balance < 0) throw new Error('원금을 넣어주세요');
+  if (!Number.isInteger(input.monthly) || input.monthly < 0) throw new Error('이자를 넣어주세요');
+  await execute(
+    `UPDATE loan SET balance = ?, monthly = ?
+      WHERE id = ? AND book_id = ?
+        AND NOT EXISTS (SELECT 1 FROM loan_schedule s WHERE s.loan_id = loan.id)`,
+    [input.balance, input.monthly, input.id, BOOK_ID],
+  );
+  refresh();
+}
+
 // ── 카테고리 ────────────────────────────────────────────────
 
 export async function saveCategory(input: { id: number | null; name: string; hidden: boolean }) {
